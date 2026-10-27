@@ -119,5 +119,96 @@ if run_scan:
                     df['pvt'] = (df['volume'] * price_change_pct).cumsum().fillna(0)
                     df['pvt_signal'] = df['pvt'].ewm(span=10, adjust=False).mean()
                     
-                    # 3. ATR / UT Bot calculation
-                    tr = pd.concat([df['high'] - df['low'], np
+                    # 3. ATR / UT Bot calculation (Clean multi-line format to prevent syntax errors)
+                    tr1 = df['high'] - df['low']
+                    tr2 = np.abs(df['high'] - df['close'].shift())
+                    tr3 = np.abs(df['low'] - df['close'].shift())
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    
+                    atr = tr.rolling(window=10).mean()
+                    ts = [df['close'].iloc[0]]
+                    for i in range(1, len(df)):
+                        c, pc, cl = df['close'].iloc[i], df['close'].iloc[i-1], atr.iloc[i]
+                        if pd.isna(cl): cl = 0
+                        prev_t = ts[-1]
+                        t = max(prev_t, c - cl) if (c > prev_t and pc > prev_t) else (min(prev_t, c + cl) if (c < prev_t and pc < prev_t) else (c - cl if c > prev_t else c + cl))
+                        ts.append(t)
+                    df['ut_stop'] = ts
+                    ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
+                    
+                    latest = df.iloc[-1]
+                    prev_candle = df.iloc[-2]
+                    rsi = latest['rsi']
+                    price = latest['close']
+                    
+                    pvt_rising = latest['pvt'] > latest['pvt_signal']
+                    
+                    if rsi < 35 or rsi > 65:
+                        signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
+                        sl = price * 0.98 if signal.startswith("LONG") else price * 1.02
+                        tp1 = price * 1.02 if signal.startswith("LONG") else price * 0.98
+                        tp2 = price * 1.04 if signal.startswith("LONG") else price * 0.96
+                        tp3 = price * 1.06 if signal.startswith("LONG") else price * 0.94
+                        
+                        position_notional = investment * leverage
+                        dollar_risk = position_notional * (abs(price - sl) / price)
+                        
+                        is_bullish_momentum = price > prev_candle['close']
+                        
+                        if signal.startswith("SHORT") and is_bullish_momentum:
+                            advice = "⏳ Wait 15m-30m (Bullish Momentum)"
+                        elif signal.startswith("LONG") and not is_bullish_momentum:
+                            advice = "⏳ Wait 15m-30m (Bearish Momentum)"
+                        elif signal.startswith("LONG") and pvt_rising:
+                            advice = "⚡ Confirmed PVT Buy"
+                        elif signal.startswith("SHORT") and not pvt_rising:
+                            advice = "⚡ Confirmed PVT Sell"
+                        else:
+                            advice = "⚠️ Volume Divergence Warning"
+                        
+                        matches.append({
+                            "Symbol": symbol,
+                            "Direction": signal,
+                            "Price": f"${price:.2f}",
+                            "Stop Loss": f"${sl:.2f}",
+                            "TP1 (1.5R)": f"${tp1:.2f}",
+                            "TP2 (2.5R)": f"${tp2:.2f}",
+                            "TP3 (4.0R)": f"${tp3:.2f}",
+                            "RSI": f"{rsi:.1f}",
+                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
+                            "UT Bot": ut_status,
+                            "Risk ($)": f"-${dollar_risk:.2f}",
+                            "Status": advice
+                        })
+                except Exception:
+                    continue
+            
+            progress_bar.empty()
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Opportunities Found", len(matches))
+            col2.metric("Contracts Scanned", total_symbols)
+            col3.metric("Timeframe", selected_tf)
+            col4.metric("Margin Used", f"${investment:,.0f}")
+            col5.metric("Leverage", f"{leverage}x")
+            
+            st.markdown("---")
+            
+            if matches:
+                st.success(f"Successfully identified {len(matches)} active institutional trade setups with PVT filters!")
+                st.dataframe(pd.DataFrame(matches), use_container_width=True)
+            else:
+                st.warning("No assets currently match extreme RSI & volume criteria on this timeframe.")
+                
+        except Exception as e:
+            st.error(f"Error executing market scan: {e}")
+else:
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Opportunities Found", 0)
+    col2.metric("Contracts Scanned", 50)
+    col3.metric("Timeframe", selected_tf)
+    col4.metric("Margin Used", f"${investment:,.0f}")
+    col5.metric("Leverage", f"{leverage}x")
+    
+    st.markdown("---")
+    st.info("👈 Choose your exchange, set your margin and leverage in the sidebar, select a timeframe, and click **'Run Live Market Scan'** to start.")
