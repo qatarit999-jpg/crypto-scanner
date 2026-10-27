@@ -34,42 +34,6 @@ def get_crypto_news():
             continue
     return news
 
-# CoinGlass Open Interest & Capital Flow / Investor Shift Tracker
-@st.cache_data(ttl=300)
-def get_coinglass_market_intel(cg_api_key=""):
-    if not cg_api_key or cg_api_key.strip() == "":
-        return [
-            "📊 **CoinGlass Capital Flow Intel:** [Enter your CoinGlass API Key in the sidebar to stream live institutional capital migration metrics].",
-            "📊 **Investor Positioning Shift (Cached):** Capital rotation observed flowing heavily into high-beta altcoin perpetuals while major exchange inflows stabilize.",
-            "📊 **Liquidation Pressure:** Short-side liquidation clusters building near key overhead resistance zones."
-        ]
-    
-    url = "https://open-api-v4.coinglass.com/api/futures/open-interest/exchange-list?symbol=BTC"
-    headers = {
-        'accept': 'application/json',
-        'CG-API-KEY': cg_api_key
-    }
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            res = json.loads(resp.read().decode())
-            if res.get('code') == 0 or res.get('code') == '0':
-                data_list = res.get('data', [])
-                total_oi = sum([float(x.get('openInterestUsd', 0)) for x in data_list if 'openInterestUsd' in x])
-                
-                # Sort exchanges to find where investors are placing capital
-                sorted_exchanges = sorted(data_list, key=lambda x: float(x.get('openInterestUsd', 0)), reverse=True)
-                top_exchange = sorted_exchanges[0].get('exchangeName', 'Binance') if sorted_exchanges else 'Major Exchanges'
-                
-                return [
-                    f"📊 **Global BTC Open Interest:** ${total_oi:,.0f} USDT across derivatives exchanges.",
-                    f"📊 **Investor Capital Concentration:** Institutional and retail funds are heavily concentrated on **{top_exchange}** futures desks.",
-                    "📊 **Capital Flow Direction:** Inflows indicate active positioning shifts toward long perpetual contracts following recent volatility squeezes."
-                ]
-    except Exception as e:
-        return [f"⚠️ CoinGlass API Connection Error: {e}. Please verify your API Key."]
-    return ["⚠️ No CoinGlass data returned."]
-
 # Live X (Twitter) API Fetcher for Multiple Crypto Leaders
 def get_live_tweets(bearer_token, username="saylor"):
     if not bearer_token or bearer_token.strip() == "":
@@ -139,7 +103,7 @@ def check_github_dev_activity(repo_path):
 
 # Sidebar Controls
 st.sidebar.title("⚙️ USDT Futures Controls")
-st.sidebar.markdown("Configure exchange, leverage, and intel feeds.")
+st.sidebar.markdown("Configure exchange, leverage, and trader intel feeds.")
 
 # Exchange Selector Dropdown
 exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
@@ -159,10 +123,6 @@ timeframe_map = {
 }
 selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
 selected_tf = timeframe_map[selected_tf_label]
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("📊 **CoinGlass Capital Flow Settings**")
-coinglass_api_key = st.sidebar.text_input("CoinGlass API Key (Optional)", type="password", help="Enter your CoinGlass API key to track global investor capital shifts.")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
@@ -187,7 +147,7 @@ run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, CoinGlass investor tracking, and top trader intel feeds.")
+st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and top trader intel feeds.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -199,12 +159,6 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
     st.markdown(f"Real-time commentary from key market figures (Tracking **@{twitter_handle}**):")
     for tweet in get_live_tweets(twitter_token, twitter_handle):
         st.markdown(f"- {tweet}")
-
-# CoinGlass Investor Capital Movement & Positioning Section (Directly underneath Twitter box)
-with st.expander("📊 CoinGlass Capital Flow & Investor Positioning Intel"):
-    st.markdown("Tracking where institutional and retail investors are moving funds across global derivative exchanges:")
-    for cg_item in get_coinglass_market_intel(coinglass_api_key):
-        st.markdown(f"- {cg_item}")
 
 st.markdown("---")
 
