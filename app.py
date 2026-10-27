@@ -206,17 +206,22 @@ if run_scan:
 
             priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
             
-            symbols = []
+            raw_symbols = []
             for p in priority_coins:
                 base = p.split('/')[0]
-                matching = [s for s in usdt_swap_symbols if s.startswith(base)]
-                symbols.extend(matching)
+                matching = [s for s in usdt_swap_symbols if s.startswith(base + '/') or s.startswith(base + ':')]
+                raw_symbols.extend(matching)
             
-            remaining = [s for s in usdt_swap_symbols if s not in symbols]
-            symbols.extend(remaining[:40 - len(symbols)])
-            
-            if not symbols:
-                symbols = usdt_swap_symbols[:15]
+            remaining = [s for s in usdt_swap_symbols if s not in raw_symbols]
+            raw_symbols.extend(remaining[:40])
+
+            # Strictly deduplicate symbols to completely prevent any duplicate rows
+            symbols = []
+            seen = set()
+            for s in raw_symbols:
+                if s not in seen:
+                    seen.add(s)
+                    symbols.append(s)
                 
             matches = []
             total_symbols = len(symbols)
