@@ -6,7 +6,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 # Page configuration
-st.set_page_config(page_title="Multi-Exchange Crypto RSI Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Multi-Exchange Crypto RSI & PVT Scanner", page_icon="⚡", layout="wide")
 
 # RSS News fetcher
 @st.cache_data(ttl=600)
@@ -55,8 +55,8 @@ selected_tf = timeframe_map[selected_tf_label]
 run_scan = st.sidebar.button("🚨 Run Live Market Scan", type="primary")
 
 # Main Header
-st.title("⚡ Multi-Exchange Crypto RSI & Liquidity Scanner")
-st.markdown("Institutional-grade liquidity screening, UT Bot indicators, and automated risk management advisor.")
+st.title("⚡ Multi-Exchange Crypto RSI & PVT Scanner")
+st.markdown("Institutional-grade liquidity screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and automated risk management advisor.")
 
 # News Expander
 with st.expander("📰 Live Macro, FED, OCC, CPI, PPI & London Crypto Intel"):
@@ -66,9 +66,8 @@ with st.expander("📰 Live Macro, FED, OCC, CPI, PPI & London Crypto Intel"):
 st.markdown("---")
 
 if run_scan:
-    with st.spinner(f"Connecting to {selected_exchange_name} & scanning market..."):
+    with st.spinner(f"Connecting to {selected_exchange_name} & scanning market with PVT indicators..."):
         try:
-            # Map selection to CCXT exchange instances
             exchange_map = {
                 "MEXC": ccxt.mexc,
                 "Binance": ccxt.binance,
@@ -89,11 +88,9 @@ if run_scan:
             exchange.load_markets()
 
         try:
-            # Target major priority coins first
             priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
             all_symbols = [s for s in exchange.symbols if '/USDT' in s]
             
-            # Combine priority coins first, followed by other active USDT pairs up to 50 total
             symbols = [s for s in priority_coins if s in all_symbols]
             remaining = [s for s in all_symbols if s not in symbols]
             symbols.extend(remaining[:50 - len(symbols)])
@@ -111,13 +108,19 @@ if run_scan:
                     ohlcv = exchange.fetch_ohlcv(symbol, selected_tf, limit=100)
                     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                     
-                    # RSI calculation
+                    # 1. RSI calculation
                     delta = df['close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                     df['rsi'] = 100 - (100 / (1 + (gain / loss)))
                     
-                    # ATR / UT Bot calculation
+                    # 2. Price Volume Trend (PVT) calculation
+                    # PVT = Previous PVT + Volume * (Close - Prev Close) / Prev Close
+                    price_change_pct = df['close'].pct_change()
+                    df['pvt'] = (df['volume'] * price_change_pct).cumsum().fillna(0)
+                    df['pvt_signal'] = df['pvt'].ewm(span=10, adjust=False).mean() # Smoothing signal line
+                    
+                    # 3. ATR / UT Bot calculation
                     tr = pd.concat([df['high'] - df['low'], np.abs(df['high'] - df['close'].shift()), np.abs(df['low'] - df['close'].shift())], axis=1).max(axis=1)
                     atr = tr.rolling(window=10).mean()
                     ts = [df['close'].iloc[0]]
@@ -131,8 +134,12 @@ if run_scan:
                     ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
                     
                     latest = df.iloc[-1]
+                    prev_candle = df.iloc[-2]
                     rsi = latest['rsi']
                     price = latest['close']
+                    
+                    # PVT Trend Confirmation Check
+                    pvt_rising = latest['pvt'] > latest['pvt_signal']
                     
                     if rsi < 35 or rsi > 65:
                         signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
@@ -145,52 +152,7 @@ if run_scan:
                         position_notional = investment * leverage
                         dollar_risk = position_notional * (abs(price - sl) / price)
                         
-                        advice = "High Probability Setup"
+                        # Momentum & Safe Entry Delay Buffer with PVT confirmation
+                        is_bullish_momentum = price > prev_candle['close']
                         
-                        matches.append({
-                            "Symbol": symbol,
-                            "Direction": signal,
-                            "Price": f"${price:.2f}",
-                            "Stop Loss": f"${sl:.2f}",
-                            "TP1 (1.5R)": f"${tp1:.2f}",
-                            "TP2 (2.5R)": f"${tp2:.2f}",
-                            "TP3 (4.0R)": f"${tp3:.2f}",
-                            "RSI": f"{rsi:.1f}",
-                            "UT Bot": ut_status,
-                            "Risk ($)": f"-${dollar_risk:.2f}",
-                            "Status": advice
-                        })
-                except Exception:
-                    continue
-            
-            progress_bar.empty()
-            
-            # Native Metrics Display
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Opportunities Found", len(matches))
-            col2.metric("Contracts Scanned", total_symbols)
-            col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f}")
-            col5.metric("Leverage", f"{leverage}x")
-            
-            st.markdown("---")
-            
-            if matches:
-                st.success(f"Successfully identified {len(matches)} active institutional trade setups!")
-                st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else:
-                st.warning("No assets currently match extreme RSI criteria on this timeframe.")
-                
-        except Exception as e:
-            st.error(f"Error executing market scan: {e}")
-else:
-    # Default display before scan runs
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 50)
-    col3.metric("Timeframe", selected_tf)
-    col4.metric("Margin Used", f"${investment:,.0f}")
-    col5.metric("Leverage", f"{leverage}x")
-    
-    st.markdown("---")
-    st.info("👈 Choose your exchange, set your margin and leverage in the sidebar, select a timeframe, and click **'Run Live Market Scan'** to start.")
+                        if signal.startswith("SHORT") and is_bullish
