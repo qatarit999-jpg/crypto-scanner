@@ -34,6 +34,29 @@ def get_crypto_news():
             continue
     return news
 
+# CoinGlass Open Interest (OI) Macro Capital Tracker
+@st.cache_data(ttl=300)
+def get_coinglass_open_interest(symbol="BTC", cg_api_key=""):
+    if not cg_api_key or cg_api_key.strip() == "":
+        return "N/A (API Key Needed)"
+    url = f"https://open-api-v4.coinglass.com/api/futures/open-interest/exchange-list?symbol={symbol}"
+    headers = {
+        'accept': 'application/json',
+        'CG-API-KEY': cg_api_key
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            res = json.loads(resp.read().decode())
+            if res.get('code') == 0 or res.get('code') == '0':
+                data_list = res.get('data', [])
+                total_oi = sum([float(x.get('openInterestUsd', 0)) for x in data_list if 'openInterestUsd' in x])
+                if total_oi > 0:
+                    return f"${total_oi:,.0f}"
+    except Exception:
+        pass
+    return "Unavailable"
+
 # Live X (Twitter) API Fetcher for Multiple Crypto Leaders
 def get_live_tweets(bearer_token, username="saylor"):
     if not bearer_token or bearer_token.strip() == "":
@@ -103,7 +126,7 @@ def check_github_dev_activity(repo_path):
 
 # Sidebar Controls
 st.sidebar.title("⚙️ USDT Futures Controls")
-st.sidebar.markdown("Configure exchange, leverage, and trader intel feeds.")
+st.sidebar.markdown("Configure exchange, leverage, and macro capital data feeds.")
 
 # Exchange Selector Dropdown
 exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
@@ -123,6 +146,10 @@ timeframe_map = {
 }
 selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
 selected_tf = timeframe_map[selected_tf_label]
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("📊 **CoinGlass Capital Flow Settings**")
+coinglass_api_key = st.sidebar.text_input("CoinGlass API Key (Optional)", type="password", help="Enter your CoinGlass API key to track global Open Interest capital allocation.")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
@@ -147,7 +174,7 @@ run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and top trader intel feeds.")
+st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, CoinGlass Open Interest tracker, and top trader intel feeds.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -215,7 +242,7 @@ if run_scan:
             remaining = [s for s in usdt_swap_symbols if s not in raw_symbols]
             raw_symbols.extend(remaining[:40])
 
-            # Strictly deduplicate symbols to completely prevent any duplicate rows
+            # Strictly deduplicate symbols to completely prevent duplicate rows
             symbols = []
             seen = set()
             for s in raw_symbols:
@@ -239,7 +266,6 @@ if run_scan:
                     if live_price is not None:
                         df.loc[df.index[-1], 'close'] = live_price
 
-                    # Filter out dead or zero-priced/corrupted micro-cap tokens
                     current_price = df['close'].iloc[-1]
                     if pd.isna(current_price) or current_price <= 0.0001:
                         continue
@@ -311,10 +337,16 @@ if run_scan:
                         elif "SOL" in clean_sym:
                             dev_status = check_github_dev_activity("solana-labs/solana")
 
+                        # Optional CoinGlass Open Interest lookup for major coins
+                        cg_oi = "N/A"
+                        if clean_sym in ['BTC', 'ETH', 'SOL', 'XRP']:
+                            cg_oi = get_coinglass_open_interest(clean_sym, coinglass_api_key)
+
                         matches.append({
                             "Symbol": symbol,
                             "Direction": signal,
                             "Price": f"${price:.2f}",
+                            "Global OI": cg_oi,
                             "Stop Loss": f"${sl:.2f}",
                             "TP1 (1.5R)": f"${tp1:.2f}",
                             "TP2 (2.5R)": f"${tp2:.2f}",
@@ -342,7 +374,7 @@ if run_scan:
             st.markdown("---")
             
             if matches:
-                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
+                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups with institutional capital tracking!")
                 st.dataframe(pd.DataFrame(matches), use_container_width=True)
             else:
                 st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
