@@ -4,18 +4,23 @@ import pandas as pd
 import numpy as np
 import urllib.request
 import xml.etree.ElementTree as ET
+import json
 
 # Page configuration
-st.set_page_config(page_title="Multi-Exchange Crypto RSI & PVT Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Multi-Exchange Crypto RSI, PVT & Alt-Data Scanner", page_icon="⚡", layout="wide")
 
-# RSS News fetcher
+# Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
 def get_crypto_news():
     rss_feeds = {
         "London Crypto News (CoinDesk)": "https://www.coindesk.com/arc/outboundfeeds/rss/",
-        "CNBC Markets": "https://www.cnbc.com/id/10000664/device/rss/rss.html"
+        "SEC Press Releases": "https://www.sec.gov/news/pressreleases.rss",
+        "Federal Reserve": "https://www.federalreserve.gov/feeds/press_all.xml"
     }
-    news = ["[FED / OCC] Federal Reserve liquidity & OCC bank charter tracking.", "[CPI / PPI] Inflation prints shaping institutional rate expectations."]
+    news = [
+        "[FED / OCC] Federal Reserve liquidity & OCC bank charter tracking.",
+        "[CPI / PPI] Inflation prints shaping institutional rate expectations."
+    ]
     for source, url in rss_feeds.items():
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -28,6 +33,20 @@ def get_crypto_news():
         except Exception:
             continue
     return news
+
+# GitHub Developer Activity Pulse Checker
+@st.cache_data(ttl=3600)
+def check_github_dev_activity(repo_path):
+    try:
+        url = f"https://api.github.com/repos/{repo_path}/commits?per_page=3"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            commits = json.loads(resp.read().decode())
+            if len(commits) > 0:
+                return "Active Dev Pulse 🟢"
+    except Exception:
+        pass
+    return "Normal ⚪"
 
 # Sidebar Controls
 st.sidebar.title("⚙️ Scanner Controls")
@@ -55,18 +74,18 @@ selected_tf = timeframe_map[selected_tf_label]
 run_scan = st.sidebar.button("🚨 Run Live Market Scan", type="primary")
 
 # Main Header
-st.title("⚡ Multi-Exchange Crypto RSI & PVT Scanner")
-st.markdown("Institutional-grade liquidity screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and automated risk management advisor.")
+st.title("⚡ Multi-Exchange Crypto RSI, PVT & Alt-Data Scanner")
+st.markdown("Institutional-grade liquidity screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, regulatory feeds, and automated risk management advisor.")
 
-# News Expander
-with st.expander("📰 Live Macro, FED, OCC, CPI, PPI & London Crypto Intel"):
+# News & Regulatory Expander
+with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
 st.markdown("---")
 
 if run_scan:
-    with st.spinner(f"Connecting to {selected_exchange_name} & scanning market with PVT indicators..."):
+    with st.spinner(f"Connecting to {selected_exchange_name} & scanning market with alt-data feeds..."):
         try:
             exchange_map = {
                 "MEXC": ccxt.mexc,
@@ -119,7 +138,7 @@ if run_scan:
                     df['pvt'] = (df['volume'] * price_change_pct).cumsum().fillna(0)
                     df['pvt_signal'] = df['pvt'].ewm(span=10, adjust=False).mean()
                     
-                    # 3. ATR / UT Bot calculation (Clean multi-line format to prevent syntax errors)
+                    # 3. ATR / UT Bot calculation
                     tr1 = df['high'] - df['low']
                     tr2 = np.abs(df['high'] - df['close'].shift())
                     tr3 = np.abs(df['low'] - df['close'].shift())
@@ -140,6 +159,10 @@ if run_scan:
                     prev_candle = df.iloc[-2]
                     rsi = latest['rsi']
                     price = latest['close']
+                    
+                    # Whale volume anomaly check (3.5x volume surge)
+                    volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
+                    is_whale_spike = latest['volume'] > (volume_ma * 3.5) if not pd.isna(volume_ma) else False
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     
@@ -166,6 +189,15 @@ if run_scan:
                         else:
                             advice = "⚠️ Volume Divergence Warning"
                         
+                        # GitHub dev check for major assets
+                        dev_status = "N/A"
+                        if "BTC" in symbol:
+                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
+                        elif "ETH" in symbol:
+                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
+                        elif "SOL" in symbol:
+                            dev_status = check_github_dev_activity("solana-labs/solana")
+
                         matches.append({
                             "Symbol": symbol,
                             "Direction": signal,
@@ -176,6 +208,8 @@ if run_scan:
                             "TP3 (4.0R)": f"${tp3:.2f}",
                             "RSI": f"{rsi:.1f}",
                             "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
+                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
+                            "Dev Pulse": dev_status,
                             "UT Bot": ut_status,
                             "Risk ($)": f"-${dollar_risk:.2f}",
                             "Status": advice
@@ -195,7 +229,7 @@ if run_scan:
             st.markdown("---")
             
             if matches:
-                st.success(f"Successfully identified {len(matches)} active institutional trade setups with PVT filters!")
+                st.success(f"Successfully identified {len(matches)} active institutional trade setups with Alt-Data & PVT filters!")
                 st.dataframe(pd.DataFrame(matches), use_container_width=True)
             else:
                 st.warning("No assets currently match extreme RSI & volume criteria on this timeframe.")
