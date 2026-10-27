@@ -280,6 +280,55 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
+# 📊 MEXC / Binance Style Interactive Candle & Data Viewer
+st.markdown("---")
+st.subheader("📊 Live Exchange Candle & Market Data Viewer (MEXC / Binance Style)")
+col_v1, col_v2 = st.columns([2, 2])
+with col_v1:
+    viewer_coin = st.text_input("Enter Coin Symbol to Inspect", value="BTC/USDT", help="e.g. BTC/USDT, ETH/USDT, SOL/USDT")
+with col_v2:
+    viewer_tf = st.selectbox("Inspection Timeframe", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"], index=1)
+
+if st.button("🔍 Load Live Candle Data & Chart"):
+    with st.spinner(f"Fetching live market data for {viewer_coin} from {selected_exchange_name}..."):
+        try:
+            ex_class = {
+                "MEXC": ccxt.mexc, "Binance": ccxt.binance, "OKX": ccxt.okx,
+                "Bybit": ccxt.bybit, "Bitget": ccxt.bitget, "Gate.io": ccxt.gate, "KuCoin": ccxt.kucoin
+            }.get(selected_exchange_name, ccxt.mexc)
+            
+            ex_inst = ex_class({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+            ex_inst.load_markets()
+            
+            target_sym = viewer_coin.upper().strip()
+            if not target_sym.endswith('/USDT'):
+                target_sym += '/USDT'
+                
+            if target_sym not in ex_inst.symbols:
+                # Try finding matching symbol
+                matching = [s for s in ex_inst.symbols if target_sym.split('/')[0] in s and 'USDT' in s]
+                if matching:
+                    target_sym = matching[0]
+                else:
+                    target_sym = 'BTC/USDT'
+            
+            candles = ex_inst.fetch_ohlcv(target_sym, viewer_tf, limit=50)
+            df_viewer = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df_viewer['Timestamp'] = pd.to_datetime(df_viewer['timestamp'], unit='ms')
+            
+            st.success(f"Successfully loaded live data for **{target_sym}** on **{selected_exchange_name}** ({viewer_tf})")
+            
+            # Interactive Price Chart
+            chart_data = df_viewer.set_index('Timestamp')[['close', 'open', 'high', 'low']]
+            st.line_chart(chart_data)
+            
+            # Raw Candle Table Data
+            st.markdown("##### 📋 Recent Candle OHLCV Feed")
+            st.dataframe(df_viewer[['Timestamp', 'open', 'high', 'low', 'close', 'volume']].sort_values(by='Timestamp', ascending=False), use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Could not load market inspection data: {e}")
+
 # Top Trader Twitter / X Intel Section
 with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})"):
     st.markdown(f"Real-time commentary from key market figures (Tracking **@{twitter_handle}**):")
@@ -397,8 +446,34 @@ if 'run_scan' in locals() and run_scan:
                     ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
                     
                     latest = df.iloc[-1]
+                    prev_c = df.iloc[-2]
                     rsi = latest['rsi']
                     price = latest['close']
+                    
+                    # Candlestick Pattern & Breakout Detection with Price
+                    curr_open = latest['open']
+                    curr_close = latest['close']
+                    prev_open = prev_c['open']
+                    prev_close = prev_c['close']
+                    
+                    high_20 = df['high'].rolling(20).max().iloc[-2]
+                    low_20 = df['low'].rolling(20).min().iloc[-2]
+                    
+                    is_bullish_engulfing = (prev_close < prev_open) and (curr_close > curr_open) and (curr_close >= prev_open) and (curr_open <= prev_close)
+                    is_bearish_engulfing = (prev_close > prev_open) and (curr_close < curr_open) and (curr_close <= prev_open) and (curr_close >= prev_close)
+                    is_breakout_high = curr_close > high_20
+                    is_breakout_low = curr_close < low_20
+                    
+                    if is_bullish_engulfing:
+                        candle_signal = f"🟢 Bulling Engulf @ ${price:.2f}"
+                    elif is_bearish_engulfing:
+                        candle_signal = f"🔴 Bearish Engulf @ ${price:.2f}"
+                    elif is_breakout_high:
+                        candle_signal = f"🚀 High Breakout @ ${price:.2f}"
+                    elif is_breakout_low:
+                        candle_signal = f"💥 Low Breakdown @ ${price:.2f}"
+                    else:
+                        candle_signal = f"Normal @ ${price:.2f}"
                     
                     volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
                     is_whale_spike = latest['volume'] > (volume_ma * 3.5) if not pd.isna(volume_ma) else False
@@ -440,6 +515,7 @@ if 'run_scan' in locals() and run_scan:
                             "Symbol": symbol,
                             "Direction": signal,
                             "Price": f"${price:.2f}",
+                            "Candle / Pattern": candle_signal,
                             "Stop Loss": f"${sl:.2f}",
                             "TP1 (1.5R)": f"${tp1:.2f}",
                             "TP2 (2.5R)": f"${tp2:.2f}",
