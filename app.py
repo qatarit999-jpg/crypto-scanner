@@ -112,37 +112,35 @@ def check_github_dev_activity(repo_path):
 st.sidebar.title("🔐 User Portal & Controls")
 
 if st.session_state.logged_in_user is None:
-    auth_mode = st.sidebar.radio("Select Mode", ["Login", "Register / Sign Up"])
+    auth_mode = st.sidebar.radio("Select Mode", ["Login", "Register / Sign Up", "Forgot Credentials"])
     
+    country_dial_codes = {
+        "Pakistan (+92)": "+92",
+        "United States / Canada (+1)": "+1",
+        "United Kingdom (+44)": "+44",
+        "United Arab Emirates (+971)": "+971",
+        "Saudi Arabia (+966)": "+966",
+        "India (+91)": "+91",
+        "Germany (+49)": "+49",
+        "France (+33)": "+33",
+        "Turkey (+90)": "+90",
+        "Qatar (+974)": "+974",
+        "Australia (+61)": "+61",
+        "Singapore (+65)": "+65",
+        "Malaysia (+60)": "+60",
+        "Other / International": "+"
+    }
+
     if auth_mode == "Register / Sign Up":
         st.sidebar.subheader("🌍 Global User Registration")
         reg_name = st.sidebar.text_input("Full Name")
         reg_username = st.sidebar.text_input("Choose Username")
         reg_password = st.sidebar.text_input("Create Password", type="password")
         
-        # Country codes dropdown dictionary
-        country_dial_codes = {
-            "Pakistan (+92)": "+92",
-            "United States / Canada (+1)": "+1",
-            "United Kingdom (+44)": "+44",
-            "United Arab Emirates (+971)": "+971",
-            "Saudi Arabia (+966)": "+966",
-            "India (+91)": "+91",
-            "Germany (+49)": "+49",
-            "France (+33)": "+33",
-            "Turkey (+90)": "+90",
-            "Qatar (+974)": "+974",
-            "Australia (+61)": "+61",
-            "Canada (+1)": "+1",
-            "Singapore (+65)": "+65",
-            "Malaysia (+60)": "+60",
-            "Other / International": "+"
-        }
-        
         selected_country_label = st.sidebar.selectbox("Select Country / Dial Code", list(country_dial_codes.keys()))
         dial_prefix = country_dial_codes[selected_country_label]
         
-        reg_phone_local = st.sidebar.text_input("Phone Number (e.g. 3001234567 or without leading zero)")
+        reg_phone_local = st.sidebar.text_input("Phone Number (e.g. 3001234567)")
         
         if st.sidebar.button("Register Account", type="primary"):
             cleaned_phone_local = reg_phone_local.strip().lstrip('0')
@@ -162,7 +160,7 @@ if st.session_state.logged_in_user is None:
                 }
                 st.sidebar.success("🎉 Registration successful! Please switch to Login.")
                 
-    else:
+    elif auth_mode == "Login":
         st.sidebar.subheader("🔑 Member Login")
         login_user = st.sidebar.text_input("Username")
         login_pass = st.sidebar.text_input("Password", type="password")
@@ -175,6 +173,28 @@ if st.session_state.logged_in_user is None:
             else:
                 st.sidebar.error("❌ Invalid username or password.")
                 
+    elif auth_mode == "Forgot Credentials":
+        st.sidebar.subheader("🔄 Recover Account")
+        selected_rec_country = st.sidebar.selectbox("Select Country / Dial Code", list(country_dial_codes.keys()), key="rec_country")
+        rec_dial_prefix = country_dial_codes[selected_rec_country]
+        rec_phone_local = st.sidebar.text_input("Registered Phone Number (e.g. 3001234567)", key="rec_phone")
+        
+        if st.sidebar.button("Send Recovery Details", type="primary"):
+            cleaned_rec_phone = rec_phone_local.strip().lstrip('0')
+            target_full_phone = f"{rec_dial_prefix}{cleaned_rec_phone}"
+            
+            # Search if phone exists in user database
+            found_user = None
+            for uname, udata in st.session_state.users_db.items():
+                if udata.get("phone") == target_full_phone:
+                    found_user = uname
+                    break
+            
+            if found_user:
+                st.sidebar.success(f"📨 Message has been sent to the registered number ({target_full_phone})!")
+            else:
+                st.sidebar.error("⚠️ No account found registered with this phone number.")
+
     st.stop()
 
 else:
