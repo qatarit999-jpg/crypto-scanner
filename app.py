@@ -148,7 +148,7 @@ col3.metric(label="Timeframe", value="30m")
 col4.metric(label="Margin Used", value="$20")
 col5.metric(label="Leverage", value="25x")
     
-    st.markdown("---")
+st.markdown("---")
     
     if matches:
         st.success(f"Successfully identified {len(matches)} active institutional trade setups!")
