@@ -6,7 +6,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 # Page configuration
-st.set_page_config(page_title="Crypto RSI Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Multi-Exchange Crypto RSI Scanner", page_icon="⚡", layout="wide")
 
 # RSS News fetcher
 @st.cache_data(ttl=600)
@@ -31,7 +31,11 @@ def get_crypto_news():
 
 # Sidebar Controls
 st.sidebar.title("⚙️ Scanner Controls")
-st.sidebar.markdown("Configure your margin, leverage, and timeframes below.")
+st.sidebar.markdown("Configure your exchange, margin, leverage, and timeframes below.")
+
+# Exchange Selector Dropdown
+exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
+selected_exchange_name = st.sidebar.selectbox("Select Exchange", exchange_options)
 
 investment = st.sidebar.number_input("Investment / Margin ($)", min_value=1.0, max_value=5000.0, value=40.0, step=5.0)
 leverage = st.sidebar.slider("Leverage (x)", min_value=5, max_value=100, value=65)
@@ -51,7 +55,7 @@ selected_tf = timeframe_map[selected_tf_label]
 run_scan = st.sidebar.button("🚨 Run Live Market Scan", type="primary")
 
 # Main Header
-st.title("⚡ Crypto RSI & Liquidity Scanner")
+st.title("⚡ Multi-Exchange Crypto RSI & Liquidity Scanner")
 st.markdown("Institutional-grade liquidity screening, UT Bot indicators, and automated risk management advisor.")
 
 # News Expander
@@ -62,11 +66,29 @@ with st.expander("📰 Live Macro, FED, OCC, CPI, PPI & London Crypto Intel"):
 st.markdown("---")
 
 if run_scan:
-    with st.spinner("Connecting to MEXC & scanning major crypto assets..."):
+    with st.spinner(f"Connecting to {selected_exchange_name} & scanning market..."):
         try:
-            exchange = ccxt.mexc({'enableRateLimit': True})
+            # Map selection to CCXT exchange instances
+            exchange_map = {
+                "MEXC": ccxt.mexc,
+                "Binance": ccxt.binance,
+                "OKX": ccxt.okx,
+                "Bybit": ccxt.bybit,
+                "Bitget": ccxt.bitget,
+                "Gate.io": ccxt.gate,
+                "KuCoin": ccxt.kucoin
+            }
+            
+            exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
+            exchange = exchange_class({'enableRateLimit': True})
             exchange.load_markets()
             
+        except Exception as e:
+            st.warning(f"⚠️ {selected_exchange_name} connection blocked or failed ({e}). Automatically falling back to MEXC...")
+            exchange = ccxt.mexc({'enableRateLimit': True})
+            exchange.load_markets()
+
+        try:
             # Target major priority coins first
             priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
             all_symbols = [s for s in exchange.symbols if '/USDT' in s]
@@ -75,6 +97,9 @@ if run_scan:
             symbols = [s for s in priority_coins if s in all_symbols]
             remaining = [s for s in all_symbols if s not in symbols]
             symbols.extend(remaining[:50 - len(symbols)])
+            
+            if not symbols:
+                symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT']
                 
             matches = []
             total_symbols = len(symbols)
@@ -115,7 +140,11 @@ if run_scan:
                         tp1 = price * 1.02 if signal.startswith("LONG") else price * 0.98
                         tp2 = price * 1.04 if signal.startswith("LONG") else price * 0.96
                         tp3 = price * 1.06 if signal.startswith("LONG") else price * 0.94
-                        dollar_risk = investment * 0.02
+                        
+                        # True leverage-adjusted risk math matching exchange positions
+                        position_notional = investment * leverage
+                        dollar_risk = position_notional * (abs(price - sl) / price)
+                        
                         advice = "High Probability Setup"
                         
                         matches.append({
@@ -153,9 +182,9 @@ if run_scan:
                 st.warning("No assets currently match extreme RSI criteria on this timeframe.")
                 
         except Exception as e:
-            st.error(f"Error connecting to exchange: {e}")
+            st.error(f"Error executing market scan: {e}")
 else:
     # Default display before scan runs
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 50)
+    col2.metric("Contracts Scanned", 5
