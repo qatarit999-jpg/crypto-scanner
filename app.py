@@ -5,9 +5,16 @@ import numpy as np
 import urllib.request
 import xml.etree.ElementTree as ET
 import json
+import re
 
 # Page configuration
-st.set_page_config(page_title="Tether (USDT-M) Futures & Multi-Trader Intel Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Tether (USDT-M) Futures & Global Auth Scanner", page_icon="⚡", layout="wide")
+
+# Initialize Session State for User Authentication Database
+if 'users_db' not in st.session_state:
+    st.session_state.users_db = {}  # {username: {"name": ..., "password": ..., "phone": ...}}
+if 'logged_in_user' not in st.session_state:
+    st.session_state.logged_in_user = None
 
 # Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
@@ -101,49 +108,97 @@ def check_github_dev_activity(repo_path):
         pass
     return "Normal ⚪"
 
-# Sidebar Controls
-st.sidebar.title("⚙️ USDT Futures Controls")
-st.sidebar.markdown("Configure exchange, leverage, and trader intel feeds.")
+# Sidebar Authentication & Controls
+st.sidebar.title("🔐 User Portal & Controls")
 
-# Exchange Selector Dropdown
-exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
-selected_exchange_name = st.sidebar.selectbox("Select Exchange", exchange_options)
+if st.session_state.logged_in_user is None:
+    auth_mode = st.sidebar.radio("Select Mode", ["Login", "Register / Sign Up"])
+    
+    if auth_mode == "Register / Sign Up":
+        st.sidebar.subheader("🌍 Global User Registration")
+        reg_name = st.sidebar.text_input("Full Name")
+        reg_username = st.sidebar.text_input("Choose Username")
+        reg_password = st.sidebar.text_input("Create Password", type="password")
+        reg_phone = st.sidebar.text_input("Phone Number (with Country Code, e.g. +92..., +1..., +44...)")
+        
+        if st.sidebar.button("Register Account", type="primary"):
+            if not reg_name or not reg_username or not reg_password or not reg_phone:
+                st.sidebar.error("⚠️ Please fill in all registration fields.")
+            elif reg_username in st.session_state.users_db:
+                st.sidebar.error("⚠️ Username already exists. Choose another.")
+            elif not re.match(r"^\+[1-9]\d{1,14}$", reg_phone.strip()):
+                st.sidebar.error("⚠️ Invalid international phone format. Please include '+' and country code (e.g., +923001234567, +14155552671).")
+            else:
+                st.session_state.users_db[reg_username] = {
+                    "name": reg_name,
+                    "password": reg_password,
+                    "phone": reg_phone.strip()
+                }
+                st.sidebar.success("🎉 Registration successful! Please switch to Login.")
+                
+    else:
+        st.sidebar.subheader("🔑 Member Login")
+        login_user = st.sidebar.text_input("Username")
+        login_pass = st.sidebar.text_input("Password", type="password")
+        
+        if st.sidebar.button("Login", type="primary"):
+            if login_user in st.session_state.users_db and st.session_state.users_db[login_user]["password"] == login_pass:
+                st.session_state.logged_in_user = login_user
+                st.sidebar.success(f"Welcome back, {st.session_state.users_db[login_user]['name']}!")
+                st.rerun()
+            else:
+                st.sidebar.error("❌ Invalid username or password.")
+                
+    st.stop() # Halt execution of the main dashboard until user is logged in
 
-investment = st.sidebar.number_input("Investment / Margin ($USDT)", min_value=1.0, max_value=5000.0, value=40.0, step=5.0)
-leverage = st.sidebar.slider("Leverage (x)", min_value=5, max_value=100, value=65)
-
-timeframe_map = {
-    "1 Minute (1m)": "1m",
-    "5 Minutes (5m)": "5m",
-    "15 Minutes (15m)": "15m",
-    "30 Minutes (30m)": "30m",
-    "1 Hour (1h)": "1h",
-    "4 Hours (4h)": "4h",
-    "1 Day (1d)": "1d"
-}
-selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
-selected_tf = timeframe_map[selected_tf_label]
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
-
-trader_options = {
-    "Michael Saylor (@saylor)": "saylor",
-    "Vitalik Buterin (@VitalikButerin)": "VitalikButerin",
-    "CZ (Changpeng Zhao - @cz_binance)": "cz_binance",
-    "Balaji Srinivasan (@balajis)": "balajis",
-    "Custom Handle": "custom"
-}
-selected_trader_label = st.sidebar.selectbox("Select Market Leader", list(trader_options.keys()))
-
-if selected_trader_label == "Custom Handle":
-    twitter_handle = st.sidebar.text_input("Enter Custom Twitter Handle", value="saylor", help="Type username without '@'")
 else:
-    twitter_handle = trader_options[selected_trader_label]
+    user_info = st.session_state.users_db[st.session_state.logged_in_user]
+    st.sidebar.success(f"👤 Logged in as: **{user_info['name']}** (@{st.session_state.logged_in_user})")
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state.logged_in_user = None
+        st.rerun()
+        
+    st.sidebar.markdown("---")
+    st.sidebar.title("⚙️ USDT Futures Controls")
+    
+    exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
+    selected_exchange_name = st.sidebar.selectbox("Select Exchange", exchange_options)
 
-twitter_token = st.sidebar.text_input("X API Bearer Token (Optional)", type="password", help="Paste your X Developer Bearer Token here to pull live real-time tweets.")
+    investment = st.sidebar.number_input("Investment / Margin ($USDT)", min_value=1.0, max_value=5000.0, value=40.0, step=5.0)
+    leverage = st.sidebar.slider("Leverage (x)", min_value=5, max_value=100, value=65)
 
-run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
+    timeframe_map = {
+        "1 Minute (1m)": "1m",
+        "5 Minutes (5m)": "5m",
+        "15 Minutes (15m)": "15m",
+        "30 Minutes (30m)": "30m",
+        "1 Hour (1h)": "1h",
+        "4 Hours (4h)": "4h",
+        "1 Day (1d)": "1d"
+    }
+    selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
+    selected_tf = timeframe_map[selected_tf_label]
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
+
+    trader_options = {
+        "Michael Saylor (@saylor)": "saylor",
+        "Vitalik Buterin (@VitalikButerin)": "VitalikButerin",
+        "CZ (Changpeng Zhao - @cz_binance)": "cz_binance",
+        "Balaji Srinivasan (@balajis)": "balajis",
+        "Custom Handle": "custom"
+    }
+    selected_trader_label = st.sidebar.selectbox("Select Market Leader", list(trader_options.keys()))
+
+    if selected_trader_label == "Custom Handle":
+        twitter_handle = st.sidebar.text_input("Enter Custom Twitter Handle", value="saylor", help="Type username without '@'")
+    else:
+        twitter_handle = trader_options[selected_trader_label]
+
+    twitter_token = st.sidebar.text_input("X API Bearer Token (Optional)", type="password", help="Paste your X Developer Bearer Token here to pull live real-time tweets.")
+
+    run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
@@ -162,7 +217,7 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
 
 st.markdown("---")
 
-if run_scan:
+if 'run_scan' in locals() and run_scan:
     with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
         try:
             exchange_map = {
@@ -215,7 +270,6 @@ if run_scan:
             remaining = [s for s in usdt_swap_symbols if s not in raw_symbols]
             raw_symbols.extend(remaining[:40])
 
-            # Strictly deduplicate symbols to completely prevent duplicate rows
             symbols = []
             seen = set()
             for s in raw_symbols:
@@ -293,68 +347,4 @@ if run_scan:
                         if signal.startswith("SHORT") and is_bullish_momentum:
                             advice = "⏳ Wait 15m-30m (Bullish Momentum)"
                         elif signal.startswith("LONG") and not is_bullish_momentum:
-                            advice = "⏳ Wait 15m-30m (Bearish Momentum)"
-                        elif signal.startswith("LONG") and pvt_rising:
-                            advice = "⚡ Confirmed PVT Buy"
-                        elif signal.startswith("SHORT") and not pvt_rising:
-                            advice = "⚡ Confirmed PVT Sell"
-                        else:
-                            advice = "⚠️ Volume Divergence Warning"
-                        
-                        dev_status = "N/A"
-                        clean_sym = symbol.split('/')[0]
-                        if "BTC" in clean_sym:
-                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
-                        elif "ETH" in clean_sym:
-                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
-                        elif "SOL" in clean_sym:
-                            dev_status = check_github_dev_activity("solana-labs/solana")
-
-                        matches.append({
-                            "Symbol": symbol,
-                            "Direction": signal,
-                            "Price": f"${price:.2f}",
-                            "Stop Loss": f"${sl:.2f}",
-                            "TP1 (1.5R)": f"${tp1:.2f}",
-                            "TP2 (2.5R)": f"${tp2:.2f}",
-                            "TP3 (4.0R)": f"${tp3:.2f}",
-                            "RSI": f"{rsi:.1f}",
-                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
-                            "Dev Pulse": dev_status,
-                            "UT Bot": ut_status,
-                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
-                            "Status": advice
-                        })
-                except Exception:
-                    continue
-            
-            progress_bar.empty()
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Opportunities Found", len(matches))
-            col2.metric("Contracts Scanned", total_symbols)
-            col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f} USDT")
-            col5.metric("Leverage", f"{leverage}x")
-            
-            st.markdown("---")
-            
-            if matches:
-                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
-                st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else:
-                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
-                
-        except Exception as e:
-            st.error(f"Error executing USDT futures scan: {e}")
-else:
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 40)
-    col3.metric("Timeframe", selected_tf)
-    col4.metric("Margin Used", f"${investment:,.0f} USDT")
-    col5.metric("Leverage", f"{leverage}x")
-    
-    st.markdown("---")
-    st.info("👈 Choose your exchange, configure your USDT margin and leverage, select a timeframe or trader, and click **'Run Live USDT Futures Scan'** to start.")
+                            advice = "⏳ Wait 15m-30m
