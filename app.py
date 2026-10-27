@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import json
 
 # Page configuration
-st.set_page_config(page_title="Multi-Exchange Crypto Perpetual Futures Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Strict USDT Futures Scanner", page_icon="⚡", layout="wide")
 
 # Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
@@ -49,14 +49,14 @@ def check_github_dev_activity(repo_path):
     return "Normal ⚪"
 
 # Sidebar Controls
-st.sidebar.title("⚙️ Futures Scanner Controls")
-st.sidebar.markdown("Configure your exchange, margin, leverage, and timeframes for perpetual swaps.")
+st.sidebar.title("⚙️ USDT Futures Controls")
+st.sidebar.markdown("Strict perpetual swap configuration for Tether futures.")
 
 # Exchange Selector Dropdown
 exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
 selected_exchange_name = st.sidebar.selectbox("Select Exchange", exchange_options)
 
-investment = st.sidebar.number_input("Investment / Margin ($)", min_value=1.0, max_value=5000.0, value=40.0, step=5.0)
+investment = st.sidebar.number_input("Investment / Margin ($USDT)", min_value=1.0, max_value=5000.0, value=40.0, step=5.0)
 leverage = st.sidebar.slider("Leverage (x)", min_value=5, max_value=100, value=65)
 
 timeframe_map = {
@@ -71,11 +71,11 @@ timeframe_map = {
 selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
 selected_tf = timeframe_map[selected_tf_label]
 
-run_scan = st.sidebar.button("🚨 Run Live Perpetual Futures Scan", type="primary")
+run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
 
 # Main Header
-st.title("⚡ Multi-Exchange Crypto Perpetual Futures Scanner")
-st.markdown("Strictly derivatives-focused perpetual swap liquidity screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and automated risk management.")
+st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
+st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and automated risk management.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -85,7 +85,7 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
 st.markdown("---")
 
 if run_scan:
-    with st.spinner(f"Connecting to {selected_exchange_name} Perpetual Futures API..."):
+    with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
         try:
             exchange_map = {
                 "MEXC": ccxt.mexc,
@@ -99,51 +99,67 @@ if run_scan:
             
             exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
             
-            # Force strict perpetual swap / futures routing
+            # Absolute enforcement of Swap / Future endpoints
             exchange = exchange_class({
                 'enableRateLimit': True,
-                'options': {'defaultType': 'swap'}
+                'options': {
+                    'defaultType': 'swap',
+                }
             })
             exchange.load_markets()
             
         except Exception as e:
-            st.warning(f"⚠️ {selected_exchange_name} Futures connection blocked or failed ({e}). Automatically falling back to MEXC Perpetual Futures...")
+            st.warning(f"⚠️ {selected_exchange_name} Futures connection failed ({e}). Falling back to MEXC USDT Futures...")
             exchange = ccxt.mexc({
                 'enableRateLimit': True,
-                'options': {'defaultType': 'swap'}
+                'options': {
+                    'defaultType': 'swap',
+                }
             })
             exchange.load_markets()
 
         try:
-            # Filter strictly for linear USDT perpetual swap contracts
-            all_symbols = [s for s in exchange.symbols if '/USDT' in s and exchange.markets[s].get('linear', False) and exchange.markets[s].get('swap', False)]
-            if not all_symbols:
-                all_symbols = [s for s in exchange.symbols if '/USDT' in s]
+            # Strict filtering: Must be a linear swap settled in USDT
+            usdt_swap_symbols = []
+            for symbol, market in exchange.markets.items():
+                if market.get('swap', False) and market.get('linear', False) and market.get('quote') == 'USDT':
+                    usdt_swap_symbols.append(symbol)
+            
+            if not usdt_swap_symbols:
+                # Fallback filter if exchange metadata naming varies slightly
+                usdt_swap_symbols = [s for s in exchange.symbols if '/USDT' in s]
 
             priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
             
             symbols = []
             for p in priority_coins:
-                base_coin = p.split('/')[0]
-                matching = [s for s in all_symbols if s.startswith(base_coin)]
+                base = p.split('/')[0]
+                matching = [s for s in usdt_swap_symbols if s.startswith(base)]
                 symbols.extend(matching)
             
-            remaining = [s for s in all_symbols if s not in symbols]
+            remaining = [s for s in usdt_swap_symbols if s not in symbols]
             symbols.extend(remaining[:40 - len(symbols)])
             
             if not symbols:
-                symbols = [s for s in all_symbols[:10]]
+                symbols = usdt_swap_symbols[:15]
                 
             matches = []
             total_symbols = len(symbols)
-            progress_bar = st.progress(0, text="Initializing perpetual futures contract scan...")
+            progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts...")
             
             for idx, symbol in enumerate(symbols):
                 progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
                 try:
+                    # Fetch precise futures ticker price from order book
+                    ticker = exchange.fetch_ticker(symbol)
+                    live_price = ticker.get('last') or ticker.get('close')
+
                     ohlcv = exchange.fetch_ohlcv(symbol, selected_tf, limit=100)
                     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                     
+                    if live_price is not None:
+                        df.loc[df.index[-1], 'close'] = live_price
+
                     # 1. RSI calculation
                     delta = df['close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -229,7 +245,7 @@ if run_scan:
                             "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
                             "Dev Pulse": dev_status,
                             "UT Bot": ut_status,
-                            "Risk ($)": f"-${dollar_risk:.2f}",
+                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
                             "Status": advice
                         })
                 except Exception:
@@ -241,26 +257,26 @@ if run_scan:
             col1.metric("Opportunities Found", len(matches))
             col2.metric("Contracts Scanned", total_symbols)
             col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f}")
+            col4.metric("Margin Used", f"${investment:,.0f} USDT")
             col5.metric("Leverage", f"{leverage}x")
             
             st.markdown("---")
             
             if matches:
-                st.success(f"Successfully identified {len(matches)} active perpetual futures swap setups!")
+                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
                 st.dataframe(pd.DataFrame(matches), use_container_width=True)
             else:
-                st.warning("No perpetual futures contracts currently match extreme RSI & volume criteria on this timeframe.")
+                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
                 
         except Exception as e:
-            st.error(f"Error executing perpetual futures scan: {e}")
+            st.error(f"Error executing USDT futures scan: {e}")
 else:
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Opportunities Found", 0)
     col2.metric("Contracts Scanned", 40)
     col3.metric("Timeframe", selected_tf)
-    col4.metric("Margin Used", f"${investment:,.0f}")
+    col4.metric("Margin Used", f"${investment:,.0f} USDT")
     col5.metric("Leverage", f"{leverage}x")
     
     st.markdown("---")
-    st.info("👈 Choose your exchange, configure your margin and leverage, select a timeframe, and click **'Run Live Perpetual Futures Scan'** to scan live perpetual swaps.")
+    st.info("👈 Choose your exchange, configure your USDT margin and leverage, select a timeframe, and click **'Run Live USDT Futures Scan'** to start.")
