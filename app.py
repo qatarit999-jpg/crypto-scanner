@@ -151,10 +151,10 @@ col5.metric(label="Leverage", value="25x")
 st.markdown("---")
     
 if matches:
-        st.success(f"Successfully identified {len(matches)} active institutional trade setups!")
-        st.dataframe(pd.DataFrame(matches), use_container_width=True)
-    else:
-st.markdown("---")
+    st.success(f"Successfully identified {len(matches)} active institutional trade setups!")
+    st.dataframe(pd.DataFrame(matches), use_container_width=True)
+else:
+    st.warning("No assets currently match extreme RSI criteria on this timeframe.")
 
 if matches:
   st.success(f"Successfully identified {len(matches)} active institutional trade setups!")
