@@ -36,9 +36,6 @@ if 'users_db' not in st.session_state:
 if 'logged_in_user' not in st.session_state:
     st.session_state.logged_in_user = None
 
-# Define your Admin Username here
-ADMIN_USERNAME = "admin"
-
 # Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
 def get_crypto_news():
@@ -273,14 +270,10 @@ else:
     twitter_token = st.sidebar.text_input("X API Bearer Token (Optional)", type="password", help="Paste your X Developer Bearer Token here to pull live real-time tweets.")
 
     run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
-    
-    run_backtest = False
-    if st.session_state.logged_in_user == ADMIN_USERNAME:
-        run_backtest = st.sidebar.button("📈 Run Historical Backtest", type="secondary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, TradingView-aligned UT Bot indicators, Price Volume Trend (PVT) confirmation, and backtesting engine.")
+st.markdown("Strictly USDⓈ-M derivatives screening, TradingView-aligned UT Bot indicators, and Price Volume Trend (PVT) confirmation.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -295,92 +288,8 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
 
 st.markdown("---")
 
-# Execution Handler for Backtest (Admin Only)
-if 'run_backtest' in locals() and run_backtest and st.session_state.logged_in_user == ADMIN_USERNAME:
-    with st.spinner(f"Running historical backtest simulation on {selected_exchange_name} ({selected_tf})..."):
-        try:
-            exchange_class = getattr(ccxt, selected_exchange_name.lower())()
-            exchange_class.options['defaultType'] = 'swap'
-            exchange_class.load_markets()
-            
-            test_symbol = 'BTC/USDT'
-            if test_symbol not in exchange_class.symbols:
-                test_symbol = exchange_class.symbols[0]
-                
-            ohlcv = exchange_class.fetch_ohlcv(test_symbol, selected_tf, limit=200)
-            df_bt = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            
-            delta = df_bt['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            df_bt['rsi'] = 100 - (100 / (1 + (gain / loss)))
-            
-            trades = []
-            wins = 0
-            losses = 0
-            
-            for i in range(20, len(df_bt) - 5):
-                rsi_val = df_bt['rsi'].iloc[i]
-                entry_price = df_bt['close'].iloc[i]
-                
-                if rsi_val < 35:
-                    sl = entry_price * 0.98
-                    tp = entry_price * 1.03
-                    trade_won = False
-                    for j in range(i+1, min(i+6, len(df_bt))):
-                        h = df_bt['high'].iloc[j]
-                        l = df_bt['low'].iloc[j]
-                        if l <= sl:
-                            trade_won = False
-                            break
-                        if h >= tp:
-                            trade_won = True
-                            break
-                    if trade_won:
-                        wins += 1
-                        trades.append({"Candle": i, "Type": "LONG", "Result": "WIN 🟢"})
-                    else:
-                        losses += 1
-                        trades.append({"Candle": i, "Type": "LONG", "Result": "LOSS 🔴"})
-                
-                elif rsi_val > 65:
-                    sl = entry_price * 1.02
-                    tp = entry_price * 0.97
-                    trade_won = False
-                    for j in range(i+1, min(i+6, len(df_bt))):
-                        h = df_bt['high'].iloc[j]
-                        l = df_bt['low'].iloc[j]
-                        if h >= sl:
-                            trade_won = False
-                            break
-                        if l <= tp:
-                            trade_won = True
-                            break
-                    if trade_won:
-                        wins += 1
-                        trades.append({"Candle": i, "Type": "SHORT", "Result": "WIN 🟢"})
-                    else:
-                        losses += 1
-                        trades.append({"Candle": i, "Type": "SHORT", "Result": "LOSS 🔴"})
-
-            total_trades = wins + losses
-            win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-            
-            st.subheader(f"📈 Backtest Results for {test_symbol} ({selected_tf})")
-            bcol1, bcol2, bcol3 = st.columns(3)
-            bcol1.metric("Total Simulated Trades", total_trades)
-            bcol2.metric("Win Rate", f"{win_rate:.1f}%")
-            bcol3.metric("Wins / Losses", f"{wins}W / {losses}L")
-            
-            if trades:
-                st.dataframe(pd.DataFrame(trades), use_container_width=True)
-            else:
-                st.info("Not enough extreme RSI triggers found in this historical window to backtest.")
-        except Exception as e:
-            st.error(f"Backtest execution failed: {e}")
-
-# Execution Handler for Live Scanning
-elif 'run_scan' in locals() and run_scan:
+# Live Scan Execution Block
+if 'run_scan' in locals() and run_scan:
     with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
         try:
             exchange_map = {
@@ -427,27 +336,3 @@ elif 'run_scan' in locals() and run_scan:
             for s in raw_symbols:
                 if s not in seen:
                     seen.add(s)
-                    symbols.append(s)
-                
-            matches = []
-            total_symbols = len(symbols)
-            progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts...")
-            
-            for idx, symbol in enumerate(symbols):
-                progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
-                try:
-                    ticker = exchange.fetch_ticker(symbol)
-                    live_price = ticker.get('last') or ticker.get('close')
-
-                    ohlcv = exchange.fetch_ohlcv(symbol, selected_tf, limit=100)
-                    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    
-                    if live_price is not None:
-                        df.loc[df.index[-1], 'close'] = live_price
-
-                    current_price = df['close'].iloc[-1]
-                    if pd.isna(current_price) or current_price <= 0.0001:
-                        continue
-
-                    delta = df['close'].diff()
-                    gain = (
