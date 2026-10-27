@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import json
 
 # Page configuration
-st.set_page_config(page_title="Tether (USDT-M) Futures & Live Intel Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Tether (USDT-M) Futures & Multi-Trader Intel Scanner", page_icon="⚡", layout="wide")
 
 # Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
@@ -34,15 +34,31 @@ def get_crypto_news():
             continue
     return news
 
-# Live X (Twitter) API Fetcher for Traders / Michael Saylor
+# Live X (Twitter) API Fetcher for Multiple Crypto Leaders
 def get_live_tweets(bearer_token, username="saylor"):
     if not bearer_token or bearer_token.strip() == "":
-        # Fallback cached insights if token is not provided yet
-        return [
-            "🐦 **@saylor (Michael Saylor):** \"Saying there is no reason to buy Bitcoin because anyone can create a cryptocurrency is like saying there is no reason to learn English because anyone can create a language.\"",
-            "🐦 **@saylor (Michael Saylor):** Corporate treasury strategy update: Expanding long-term digital asset reserves to back institutional balance sheet growth.",
-            "💡 *Tip: Enter your X (Twitter) API Bearer Token in the sidebar to fetch live real-time tweets automatically!*"
-        ]
+        # Fallback cached insights tailored to the selected handle if no token is provided
+        fallbacks = {
+            "saylor": [
+                "🐦 **@saylor (Michael Saylor):** \"Saying there is no reason to buy Bitcoin because anyone can create a cryptocurrency is like saying there is no reason to learn English...\"",
+                "🐦 **@saylor (Michael Saylor):** Corporate treasury strategy update: Expanding long-term digital asset reserves to back institutional balance sheet growth."
+            ],
+            "VitalikButerin": [
+                "🐦 **@VitalikButerin:** Exploring new cryptographic primitives for cross-layer scalability and enhanced privacy preservation on decentralized state networks.",
+                "🐦 **@VitalikButerin:** Thoughts on upcoming rollup security optimizations and stateless client validation milestones."
+            ],
+            "cz_binance": [
+                "🐦 **@cz_binance:** Focus on building, security, and long-term user protection. Market cycles come and go, execution remains constant.",
+                "🐦 **@cz_binance:** Education and Web3 infrastructure development are key drivers for the next wave of global adoption."
+            ],
+            "balajis": [
+                "🐦 **@balajis:** Decentralization is moving from financial protocols outward into network states, decentralized media, and sovereign supply chains.",
+                "🐦 **@balajis:** Cloud-first communities and algorithmic governance are transforming how capital and talent allocate globally."
+            ]
+        }
+        default_tweets = fallbacks.get(username, [f"🐦 **@{username}:** [Connect your X Bearer Token in the sidebar to stream live posts from this account.]"])
+        default_tweets.append("💡 *Tip: Enter your X (Twitter) API Bearer Token in the sidebar to fetch real-time tweets automatically!*")
+        return default_tweets
     
     try:
         # Step 1: Get User ID from username
@@ -90,7 +106,7 @@ def check_github_dev_activity(repo_path):
 
 # Sidebar Controls
 st.sidebar.title("⚙️ USDT Futures Controls")
-st.sidebar.markdown("Configure exchange, leverage, and live API feeds.")
+st.sidebar.markdown("Configure exchange, leverage, and trader intel feeds.")
 
 # Exchange Selector Dropdown
 exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
@@ -112,24 +128,38 @@ selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.
 selected_tf = timeframe_map[selected_tf_label]
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("🐦 **Live X (Twitter) Settings**")
-twitter_token = st.sidebar.text_input("X API Bearer Token", type="password", help="Paste your X Developer Bearer Token here to pull live tweets.")
-twitter_handle = st.sidebar.text_input("Twitter Handle to Track", value="saylor", help="Enter username without '@' (e.g. saylor)")
+st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
+
+trader_options = {
+    "Michael Saylor (@saylor)": "saylor",
+    "Vitalik Buterin (@VitalikButerin)": "VitalikButerin",
+    "CZ (Changpeng Zhao - @cz_binance)": "cz_binance",
+    "Balaji Srinivasan (@balajis)": "balajis",
+    "Custom Handle": "custom"
+}
+selected_trader_label = st.sidebar.selectbox("Select Market Leader", list(trader_options.keys()))
+
+if selected_trader_label == "Custom Handle":
+    twitter_handle = st.sidebar.text_input("Enter Custom Twitter Handle", value="saylor", help="Type username without '@'")
+else:
+    twitter_handle = trader_options[selected_trader_label]
+
+twitter_token = st.sidebar.text_input("X API Bearer Token (Optional)", type="password", help="Paste your X Developer Bearer Token here to pull live real-time tweets.")
 
 run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and live intel feeds.")
+st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and top trader intel feeds.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
-# Top Trader Twitter / X Intel Section (Live API Integration)
+# Top Trader Twitter / X Intel Section (Multi-Trader Integration)
 with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})"):
-    st.markdown(f"Real-time posts fetched directly from **@{twitter_handle}** via Twitter API:")
+    st.markdown(f"Real-time commentary from key market figures (Tracking **@{twitter_handle}**):")
     for tweet in get_live_tweets(twitter_token, twitter_handle):
         st.markdown(f"- {tweet}")
 
@@ -268,62 +298,3 @@ if run_scan:
                         elif signal.startswith("SHORT") and not pvt_rising:
                             advice = "⚡ Confirmed PVT Sell"
                         else:
-                            advice = "⚠️ Volume Divergence Warning"
-                        
-                        dev_status = "N/A"
-                        clean_sym = symbol.split('/')[0]
-                        if "BTC" in clean_sym:
-                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
-                        elif "ETH" in clean_sym:
-                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
-                        elif "SOL" in clean_sym:
-                            dev_status = check_github_dev_activity("solana-labs/solana")
-
-                        matches.append({
-                            "Symbol": symbol,
-                            "Direction": signal,
-                            "Price": f"${price:.2f}",
-                            "Stop Loss": f"${sl:.2f}",
-                            "TP1 (1.5R)": f"${tp1:.2f}",
-                            "TP2 (2.5R)": f"${tp2:.2f}",
-                            "TP3 (4.0R)": f"${tp3:.2f}",
-                            "RSI": f"{rsi:.1f}",
-                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
-                            "Dev Pulse": dev_status,
-                            "UT Bot": ut_status,
-                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
-                            "Status": advice
-                        })
-                except Exception:
-                    continue
-            
-            progress_bar.empty()
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Opportunities Found", len(matches))
-            col2.metric("Contracts Scanned", total_symbols)
-            col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f} USDT")
-            col5.metric("Leverage", f"{leverage}x")
-            
-            st.markdown("---")
-            
-            if matches:
-                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
-                st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else:
-                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
-                
-        except Exception as e:
-            st.error(f"Error executing USDT futures scan: {e}")
-else:
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 40)
-    col3.metric("Timeframe", selected_tf)
-    col4.metric("Margin Used", f"${investment:,.0f} USDT")
-    col5.metric("Leverage", f"{leverage}x")
-    
-    st.markdown("---")
-    st.info("👈 Choose your exchange, configure your USDT margin and leverage, select a timeframe, and click **'Run Live USDT Futures Scan'** to start.")
