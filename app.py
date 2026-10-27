@@ -8,7 +8,7 @@ import json
 import re
 
 # Page configuration
-st.set_page_config(page_title="Tether (USDT-M) Futures & Global Auth Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Tether (USDT-M) Futures & Backtest Scanner", page_icon="⚡", layout="wide")
 
 # Initialize Session State for User Authentication Database
 if 'users_db' not in st.session_state:
@@ -183,7 +183,6 @@ if st.session_state.logged_in_user is None:
             cleaned_rec_phone = rec_phone_local.strip().lstrip('0')
             target_full_phone = f"{rec_dial_prefix}{cleaned_rec_phone}"
             
-            # Search if phone exists in user database
             found_user = None
             for uname, udata in st.session_state.users_db.items():
                 if udata.get("phone") == target_full_phone:
@@ -245,10 +244,11 @@ else:
     twitter_token = st.sidebar.text_input("X API Bearer Token (Optional)", type="password", help="Paste your X Developer Bearer Token here to pull live real-time tweets.")
 
     run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
+    run_backtest = st.sidebar.button("📈 Run Historical Backtest", type="secondary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and top trader intel feeds.")
+st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and backtesting engine.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -263,7 +263,94 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
 
 st.markdown("---")
 
-if 'run_scan' in locals() and run_scan:
+# Handle Backtest execution
+if 'run_backtest' in locals() and run_backtest:
+    with st.spinner(f"Running historical backtest simulation on {selected_exchange_name} ({selected_tf})..."):
+        try:
+            exchange_class = getattr(ccxt, selected_exchange_name.lower())()
+            exchange_class.options['defaultType'] = 'swap'
+            exchange_class.load_markets()
+            
+            # Fetch BTC or top coin historical candles for backtesting
+            test_symbol = 'BTC/USDT'
+            if test_symbol not in exchange_class.symbols:
+                test_symbol = exchange_class.symbols[0]
+                
+            ohlcv = exchange_class.fetch_ohlcv(test_symbol, selected_tf, limit=200)
+            df_bt = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+            # Calculate indicators for backtest
+            delta = df_bt['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            df_bt['rsi'] = 100 - (100 / (1 + (gain / loss)))
+            
+            trades = []
+            wins = 0
+            losses = 0
+            
+            for i in range(20, len(df_bt) - 5):
+                rsi_val = df_bt['rsi'].iloc[i]
+                entry_price = df_bt['close'].iloc[i]
+                
+                if rsi_val < 35: # Simulated Long Backtest Trade
+                    sl = entry_price * 0.98
+                    tp = entry_price * 1.03
+                    # Check next 5 candles for outcome
+                    trade_won = False
+                    for j in range(i+1, min(i+6, len(df_bt))):
+                        h = df_bt['high'].iloc[j]
+                        l = df_bt['low'].iloc[j]
+                        if l <= sl:
+                            trade_won = False
+                            break
+                        if h >= tp:
+                            trade_won = True
+                            break
+                    if trade_won:
+                        wins += 1
+                        trades.append({"Candle": i, "Type": "LONG", "Result": "WIN 🟢", P := "+3%"})
+                    else:
+                        losses += 1
+                        trades.append({"Candle": i, "Type": "LONG", "Result": "LOSS 🔴", P := "-2%"})
+                
+                elif rsi_val > 65: # Simulated Short Backtest Trade
+                    sl = entry_price * 1.02
+                    tp = entry_price * 0.97
+                    trade_won = False
+                    for j in range(i+1, min(i+6, len(df_bt))):
+                        h = df_bt['high'].iloc[j]
+                        l = df_bt['low'].iloc[j]
+                        if h >= sl:
+                            trade_won = False
+                            break
+                        if l <= tp:
+                            trade_won = True
+                            break
+                    if trade_won:
+                        wins += 1
+                        trades.append({"Candle": i, "Type": "SHORT", "Result": "WIN 🟢"})
+                    else:
+                        losses += 1
+                        trades.append({"Candle": i, "Type": "SHORT", "Result": "LOSS 🔴"})
+
+            total_trades = wins + losses
+            win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+            
+            st.subheader(f"📈 Backtest Results for {test_symbol} ({selected_tf})")
+            bcol1, bcol2, bcol3 = st.columns(3)
+            bcol1.metric("Total Simulated Trades", total_trades)
+            bcol2.metric("Win Rate", f"{win_rate:.1f}%")
+            bcol3.metric("Wins / Losses", f"{wins}W / {losses}L")
+            
+            if trades:
+                st.dataframe(pd.DataFrame(trades), use_container_width=True)
+            else:
+                st.info("Not enough extreme RSI triggers found in this historical window to backtest.")
+        except Exception as e:
+            st.error(f"Backtest execution failed: {e}")
+
+elif 'run_scan' in locals() and run_scan:
     with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
         try:
             exchange_map = {
@@ -277,23 +364,12 @@ if 'run_scan' in locals() and run_scan:
             }
             
             exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
-            
-            exchange = exchange_class({
-                'enableRateLimit': True,
-                'options': {
-                    'defaultType': 'swap',
-                }
-            })
+            exchange = exchange_class({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
             exchange.load_markets()
             
         except Exception as e:
-            st.warning(f"⚠️ {selected_exchange_name} Futures connection failed ({e}). Falling back to MEXC USDT Futures...")
-            exchange = ccxt.mexc({
-                'enableRateLimit': True,
-                'options': {
-                    'defaultType': 'swap',
-                }
-            })
+            st.warning(f"⚠️ {selected_exchange_name} connection failed ({e}). Falling back to MEXC...")
+            exchange = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
             exchange.load_markets()
 
         try:
@@ -457,4 +533,4 @@ else:
     col5.metric("Leverage", "65x")
     
     st.markdown("---")
-    st.info("👈 Register or login via the sidebar, configure your exchange parameters, and click **'Run Live USDT Futures Scan'** to start.")
+    st.info("👈 Register or login via the sidebar, configure your parameters, and click **'Run Live USDT Futures Scan'** or **'Run Historical Backtest'** to start.")
