@@ -6,7 +6,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 # Page configuration
-st.set_page_config(page_title="Crypto & Asset RSI Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Crypto RSI Scanner", page_icon="⚡", layout="wide")
 
 # RSS News fetcher
 @st.cache_data(ttl=600)
@@ -51,7 +51,7 @@ selected_tf = timeframe_map[selected_tf_label]
 run_scan = st.sidebar.button("🚨 Run Live Market Scan", type="primary")
 
 # Main Header
-st.title("⚡ Global Asset RSI Scanner")
+st.title("⚡ Crypto RSI & Liquidity Scanner")
 st.markdown("Institutional-grade liquidity screening, UT Bot indicators, and automated risk management advisor.")
 
 # News Expander
@@ -62,14 +62,19 @@ with st.expander("📰 Live Macro, FED, OCC, CPI, PPI & London Crypto Intel"):
 st.markdown("---")
 
 if run_scan:
-    with st.spinner("Connecting to exchange & scanning market liquidity..."):
+    with st.spinner("Connecting to MEXC & scanning major crypto assets..."):
         try:
             exchange = ccxt.mexc({'enableRateLimit': True})
             exchange.load_markets()
             
-            symbols = [s for s in exchange.symbols if '/USDT' in s][:52]
-            if not symbols:
-                symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ADA/USDT']
+            # Target major priority coins first
+            priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
+            all_symbols = [s for s in exchange.symbols if '/USDT' in s]
+            
+            # Combine priority coins first, followed by other active USDT pairs up to 50 total
+            symbols = [s for s in priority_coins if s in all_symbols]
+            remaining = [s for s in all_symbols if s not in symbols]
+            symbols.extend(remaining[:50 - len(symbols)])
                 
             matches = []
             total_symbols = len(symbols)
@@ -153,10 +158,4 @@ else:
     # Default display before scan runs
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 52)
-    col3.metric("Timeframe", selected_tf)
-    col4.metric("Margin Used", f"${investment:,.0f}")
-    col5.metric("Leverage", f"{leverage}x")
-    
-    st.markdown("---")
-    st.info("👈 Set your investment margin and leverage in the sidebar, choose a timeframe, and click **'Run Live Market Scan'** to start.")
+    col2.metric("Contracts Scanned", 50)
