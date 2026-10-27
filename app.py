@@ -115,44 +115,9 @@ if run_scan:
                     df['rsi'] = 100 - (100 / (1 + (gain / loss)))
                     
                     # 2. Price Volume Trend (PVT) calculation
-                    # PVT = Previous PVT + Volume * (Close - Prev Close) / Prev Close
                     price_change_pct = df['close'].pct_change()
                     df['pvt'] = (df['volume'] * price_change_pct).cumsum().fillna(0)
-                    df['pvt_signal'] = df['pvt'].ewm(span=10, adjust=False).mean() # Smoothing signal line
+                    df['pvt_signal'] = df['pvt'].ewm(span=10, adjust=False).mean()
                     
                     # 3. ATR / UT Bot calculation
-                    tr = pd.concat([df['high'] - df['low'], np.abs(df['high'] - df['close'].shift()), np.abs(df['low'] - df['close'].shift())], axis=1).max(axis=1)
-                    atr = tr.rolling(window=10).mean()
-                    ts = [df['close'].iloc[0]]
-                    for i in range(1, len(df)):
-                        c, pc, cl = df['close'].iloc[i], df['close'].iloc[i-1], atr.iloc[i]
-                        if pd.isna(cl): cl = 0
-                        prev_t = ts[-1]
-                        t = max(prev_t, c - cl) if (c > prev_t and pc > prev_t) else (min(prev_t, c + cl) if (c < prev_t and pc < prev_t) else (c - cl if c > prev_t else c + cl))
-                        ts.append(t)
-                    df['ut_stop'] = ts
-                    ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
-                    
-                    latest = df.iloc[-1]
-                    prev_candle = df.iloc[-2]
-                    rsi = latest['rsi']
-                    price = latest['close']
-                    
-                    # PVT Trend Confirmation Check
-                    pvt_rising = latest['pvt'] > latest['pvt_signal']
-                    
-                    if rsi < 35 or rsi > 65:
-                        signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
-                        sl = price * 0.98 if signal.startswith("LONG") else price * 1.02
-                        tp1 = price * 1.02 if signal.startswith("LONG") else price * 0.98
-                        tp2 = price * 1.04 if signal.startswith("LONG") else price * 0.96
-                        tp3 = price * 1.06 if signal.startswith("LONG") else price * 0.94
-                        
-                        # True leverage-adjusted risk math matching exchange positions
-                        position_notional = investment * leverage
-                        dollar_risk = position_notional * (abs(price - sl) / price)
-                        
-                        # Momentum & Safe Entry Delay Buffer with PVT confirmation
-                        is_bullish_momentum = price > prev_candle['close']
-                        
-                        if signal.startswith("SHORT") and is_bullish
+                    tr = pd.concat([df['high'] - df['low'], np
