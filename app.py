@@ -12,7 +12,7 @@ st.set_page_config(page_title="Tether (USDT-M) Futures & Global Auth Scanner", p
 
 # Initialize Session State for User Authentication Database
 if 'users_db' not in st.session_state:
-    st.session_state.users_db = {}  # {username: {"name": ..., "password": ..., "phone": ...}}
+    st.session_state.users_db = {}
 if 'logged_in_user' not in st.session_state:
     st.session_state.logged_in_user = None
 
@@ -149,7 +149,7 @@ if st.session_state.logged_in_user is None:
             else:
                 st.sidebar.error("❌ Invalid username or password.")
                 
-    st.stop() # Halt execution of the main dashboard until user is logged in
+    st.stop()
 
 else:
     user_info = st.session_state.users_db[st.session_state.logged_in_user]
@@ -345,6 +345,70 @@ if 'run_scan' in locals() and run_scan:
                         is_bullish_momentum = price > prev_candle['close']
                         
                         if signal.startswith("SHORT") and is_bullish_momentum:
-                            advice = "⏳ Wait 15m-30m (Bullish Momentum)"
+                            advice = "Wait 15m-30m (Bullish Momentum)"
                         elif signal.startswith("LONG") and not is_bullish_momentum:
-                            advice = "⏳ Wait 15m-30m
+                            advice = "Wait 15m-30m (Bearish Momentum)"
+                        elif signal.startswith("LONG") and pvt_rising:
+                            advice = "Confirmed PVT Buy"
+                        elif signal.startswith("SHORT") and not pvt_rising:
+                            advice = "Confirmed PVT Sell"
+                        else:
+                            advice = "Volume Divergence Warning"
+                        
+                        dev_status = "N/A"
+                        clean_sym = symbol.split('/')[0]
+                        if "BTC" in clean_sym:
+                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
+                        elif "ETH" in clean_sym:
+                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
+                        elif "SOL" in clean_sym:
+                            dev_status = check_github_dev_activity("solana-labs/solana")
+
+                        matches.append({
+                            "Symbol": symbol,
+                            "Direction": signal,
+                            "Price": f"${price:.2f}",
+                            "Stop Loss": f"${sl:.2f}",
+                            "TP1 (1.5R)": f"${tp1:.2f}",
+                            "TP2 (2.5R)": f"${tp2:.2f}",
+                            "TP3 (4.0R)": f"${tp3:.2f}",
+                            "RSI": f"{rsi:.1f}",
+                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
+                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
+                            "Dev Pulse": dev_status,
+                            "UT Bot": ut_status,
+                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
+                            "Status": advice
+                        })
+                except Exception:
+                    continue
+            
+            progress_bar.empty()
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Opportunities Found", len(matches))
+            col2.metric("Contracts Scanned", total_symbols)
+            col3.metric("Timeframe", selected_tf)
+            col4.metric("Margin Used", f"${investment:,.0f} USDT")
+            col5.metric("Leverage", f"{leverage}x")
+            
+            st.markdown("---")
+            
+            if matches:
+                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
+                st.dataframe(pd.DataFrame(matches), use_container_width=True)
+            else:
+                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
+                
+        except Exception as e:
+            st.error(f"Error executing USDT futures scan: {e}")
+else:
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Opportunities Found", 0)
+    col2.metric("Contracts Scanned", 40)
+    col3.metric("Timeframe", "5m")
+    col4.metric("Margin Used", "$40 USDT")
+    col5.metric("Leverage", "65x")
+    
+    st.markdown("---")
+    st.info("👈 Register or login via the sidebar, configure your exchange parameters, and click **'Run Live USDT Futures Scan'** to start.")
