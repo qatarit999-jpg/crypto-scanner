@@ -187,4 +187,10 @@ else:
     # Default display before scan runs
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 5
+    col2.metric("Contracts Scanned", 50)
+    col3.metric("Timeframe", selected_tf)
+    col4.metric("Margin Used", f"${investment:,.0f}")
+    col5.metric("Leverage", f"{leverage}x")
+    
+    st.markdown("---")
+    st.info("👈 Choose your exchange, set your margin and leverage in the sidebar, select a timeframe, and click **'Run Live Market Scan'** to start.")
