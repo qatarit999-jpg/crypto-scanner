@@ -154,6 +154,6 @@ if matches:
         st.success(f"Successfully identified {len(matches)} active institutional trade setups!")
         st.dataframe(pd.DataFrame(matches), use_container_width=True)
     else:
-        st.warning("No assets currently match extreme RSI criteria on this timeframe.")
+st.warning("No assets currently match extreme RSI criteria on this timeframe.")
 else:
     st.info("👈 Set your investment margin and leverage in the sidebar, choose a timeframe, and click **'Run Live Market Scan'** to start.")
