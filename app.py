@@ -8,13 +8,16 @@ import json
 import re
 
 # Page configuration
-st.set_page_config(page_title="Tether (USDT-M) Futures & Backtest Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Tether (USDT-M) Futures & Global Auth Scanner", page_icon="⚡", layout="wide")
 
 # Initialize Session State for User Authentication Database
 if 'users_db' not in st.session_state:
     st.session_state.users_db = {}
 if 'logged_in_user' not in st.session_state:
     st.session_state.logged_in_user = None
+
+# Define your Admin Username here (Change this to your exact login username)
+ADMIN_USERNAME = "admin"
 
 # Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
@@ -244,7 +247,11 @@ else:
     twitter_token = st.sidebar.text_input("X API Bearer Token (Optional)", type="password", help="Paste your X Developer Bearer Token here to pull live real-time tweets.")
 
     run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
-    run_backtest = st.sidebar.button("📈 Run Historical Backtest", type="secondary")
+    
+    # BACKTEST BUTTON: Visible ONLY if the logged-in user matches ADMIN_USERNAME
+    run_backtest = False
+    if st.session_state.logged_in_user == ADMIN_USERNAME:
+        run_backtest = st.sidebar.button("📈 Run Historical Backtest", type="secondary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
@@ -263,8 +270,8 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
 
 st.markdown("---")
 
-# Handle Backtest execution
-if 'run_backtest' in locals() and run_backtest:
+# Handle Backtest execution (Restricted check as well)
+if 'run_backtest' in locals() and run_backtest and st.session_state.logged_in_user == ADMIN_USERNAME:
     with st.spinner(f"Running historical backtest simulation on {selected_exchange_name} ({selected_tf})..."):
         try:
             exchange_class = getattr(ccxt, selected_exchange_name.lower())()
@@ -272,273 +279,3 @@ if 'run_backtest' in locals() and run_backtest:
             exchange_class.load_markets()
             
             test_symbol = 'BTC/USDT'
-            if test_symbol not in exchange_class.symbols:
-                test_symbol = exchange_class.symbols[0]
-                
-            ohlcv = exchange_class.fetch_ohlcv(test_symbol, selected_tf, limit=200)
-            df_bt = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            
-            delta = df_bt['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            df_bt['rsi'] = 100 - (100 / (1 + (gain / loss)))
-            
-            trades = []
-            wins = 0
-            losses = 0
-            
-            for i in range(20, len(df_bt) - 5):
-                rsi_val = df_bt['rsi'].iloc[i]
-                entry_price = df_bt['close'].iloc[i]
-                
-                if rsi_val < 35:
-                    sl = entry_price * 0.98
-                    tp = entry_price * 1.03
-                    trade_won = False
-                    for j in range(i+1, min(i+6, len(df_bt))):
-                        h = df_bt['high'].iloc[j]
-                        l = df_bt['low'].iloc[j]
-                        if l <= sl:
-                            trade_won = False
-                            break
-                        if h >= tp:
-                            trade_won = True
-                            break
-                    if trade_won:
-                        wins += 1
-                        trades.append({"Candle": i, "Type": "LONG", "Result": "WIN 🟢"})
-                    else:
-                        losses += 1
-                        trades.append({"Candle": i, "Type": "LONG", "Result": "LOSS 🔴"})
-                
-                elif rsi_val > 65:
-                    sl = entry_price * 1.02
-                    tp = entry_price * 0.97
-                    trade_won = False
-                    for j in range(i+1, min(i+6, len(df_bt))):
-                        h = df_bt['high'].iloc[j]
-                        l = df_bt['low'].iloc[j]
-                        if h >= sl:
-                            trade_won = False
-                            break
-                        if l <= tp:
-                            trade_won = True
-                            break
-                    if trade_won:
-                        wins += 1
-                        trades.append({"Candle": i, "Type": "SHORT", "Result": "WIN 🟢"})
-                    else:
-                        losses += 1
-                        trades.append({"Candle": i, "Type": "SHORT", "Result": "LOSS 🔴"})
-
-            total_trades = wins + losses
-            win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
-            
-            st.subheader(f"📈 Backtest Results for {test_symbol} ({selected_tf})")
-            bcol1, bcol2, bcol3 = st.columns(3)
-            bcol1.metric("Total Simulated Trades", total_trades)
-            bcol2.metric("Win Rate", f"{win_rate:.1f}%")
-            bcol3.metric("Wins / Losses", f"{wins}W / {losses}L")
-            
-            if trades:
-                st.dataframe(pd.DataFrame(trades), use_container_width=True)
-            else:
-                st.info("Not enough extreme RSI triggers found in this historical window to backtest.")
-        except Exception as e:
-            st.error(f"Backtest execution failed: {e}")
-
-elif 'run_scan' in locals() and run_scan:
-    with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
-        try:
-            exchange_map = {
-                "MEXC": ccxt.mexc,
-                "Binance": ccxt.binance,
-                "OKX": ccxt.okx,
-                "Bybit": ccxt.bybit,
-                "Bitget": ccxt.bitget,
-                "Gate.io": ccxt.gate,
-                "KuCoin": ccxt.kucoin
-            }
-            
-            exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
-            exchange = exchange_class({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
-            exchange.load_markets()
-            
-        except Exception as e:
-            st.warning(f"⚠️ {selected_exchange_name} connection failed ({e}). Falling back to MEXC...")
-            exchange = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
-            exchange.load_markets()
-
-        try:
-            usdt_swap_symbols = []
-            for symbol, market in exchange.markets.items():
-                if market.get('swap', False) and market.get('linear', False) and market.get('quote') == 'USDT':
-                    usdt_swap_symbols.append(symbol)
-            
-            if not usdt_swap_symbols:
-                usdt_swap_symbols = [s for s in exchange.symbols if '/USDT' in s]
-
-            priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
-            
-            raw_symbols = []
-            for p in priority_coins:
-                base = p.split('/')[0]
-                matching = [s for s in usdt_swap_symbols if s.startswith(base + '/') or s.startswith(base + ':')]
-                raw_symbols.extend(matching)
-            
-            remaining = [s for s in usdt_swap_symbols if s not in raw_symbols]
-            raw_symbols.extend(remaining[:40])
-
-            symbols = []
-            seen = set()
-            for s in raw_symbols:
-                if s not in seen:
-                    seen.add(s)
-                    symbols.append(s)
-                
-            matches = []
-            total_symbols = len(symbols)
-            progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts...")
-            
-            for idx, symbol in enumerate(symbols):
-                progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
-                try:
-                    ticker = exchange.fetch_ticker(symbol)
-                    live_price = ticker.get('last') or ticker.get('close')
-
-                    ohlcv = exchange.fetch_ohlcv(symbol, selected_tf, limit=100)
-                    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    
-                    if live_price is not None:
-                        df.loc[df.index[-1], 'close'] = live_price
-
-                    current_price = df['close'].iloc[-1]
-                    if pd.isna(current_price) or current_price <= 0.0001:
-                        continue
-
-                    delta = df['close'].diff()
-                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                    df['rsi'] = 100 - (100 / (1 + (gain / loss)))
-                    
-                    price_change_pct = df['close'].pct_change()
-                    df['pvt'] = (df['volume'] * price_change_pct).cumsum().fillna(0)
-                    df['pvt_signal'] = df['pvt'].ewm(span=10, adjust=False).mean()
-                    
-                    tr1 = df['high'] - df['low']
-                    tr2 = np.abs(df['high'] - df['close'].shift())
-                    tr3 = np.abs(df['low'] - df['close'].shift())
-                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    
-                    atr = tr.rolling(window=10).mean()
-                    ts = [df['close'].iloc[0]]
-                    for i in range(1, len(df)):
-                        c, pc, cl = df['close'].iloc[i], df['close'].iloc[i-1], atr.iloc[i]
-                        if pd.isna(cl): 
-                            cl = 0
-                        prev_t = ts[-1]
-                        
-                        # Clean if-elif-else block for ATR / UT Bot trailing stop calculation
-                        if c > prev_t and pc > prev_t:
-                            t = max(prev_t, c - cl)
-                        elif c < prev_t and pc < prev_t:
-                            t = min(prev_t, c + cl)
-                        elif c > prev_t:
-                            t = c - cl
-                        else:
-                            t = c + cl
-                        ts.append(t)
-                        
-                    df['ut_stop'] = ts
-                    ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
-                    
-                    latest = df.iloc[-1]
-                    prev_candle = df.iloc[-2]
-                    rsi = latest['rsi']
-                    price = latest['close']
-                    
-                    volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
-                    is_whale_spike = latest['volume'] > (volume_ma * 3.5) if not pd.isna(volume_ma) else False
-                    
-                    pvt_rising = latest['pvt'] > latest['pvt_signal']
-                    
-                    if rsi < 35 or rsi > 65:
-                        signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
-                        sl = price * 0.98 if signal.startswith("LONG") else price * 1.02
-                        tp1 = price * 1.02 if signal.startswith("LONG") else price * 0.98
-                        tp2 = price * 1.04 if signal.startswith("LONG") else price * 0.96
-                        tp3 = price * 1.06 if signal.startswith("LONG") else price * 0.94
-                        
-                        position_notional = investment * leverage
-                        dollar_risk = position_notional * (abs(price - sl) / price)
-                        
-                        is_bullish_momentum = price > prev_candle['close']
-                        
-                        if signal.startswith("SHORT") and is_bullish_momentum:
-                            advice = "Wait 15m-30m (Bullish Momentum)"
-                        elif signal.startswith("LONG") and not is_bullish_momentum:
-                            advice = "Wait 15m-30m (Bearish Momentum)"
-                        elif signal.startswith("LONG") and pvt_rising:
-                            advice = "Confirmed PVT Buy"
-                        elif signal.startswith("SHORT") and not pvt_rising:
-                            advice = "Confirmed PVT Sell"
-                        else:
-                            advice = "Volume Divergence Warning"
-                        
-                        dev_status = "N/A"
-                        clean_sym = symbol.split('/')[0]
-                        if "BTC" in clean_sym:
-                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
-                        elif "ETH" in clean_sym:
-                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
-                        elif "SOL" in clean_sym:
-                            dev_status = check_github_dev_activity("solana-labs/solana")
-
-                        matches.append({
-                            "Symbol": symbol,
-                            "Direction": signal,
-                            "Price": f"${price:.2f}",
-                            "Stop Loss": f"${sl:.2f}",
-                            "TP1 (1.5R)": f"${tp1:.2f}",
-                            "TP2 (2.5R)": f"${tp2:.2f}",
-                            "TP3 (4.0R)": f"${tp3:.2f}",
-                            "RSI": f"{rsi:.1f}",
-                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
-                            "Dev Pulse": dev_status,
-                            "UT Bot": ut_status,
-                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
-                            "Status": advice
-                        })
-                except Exception:
-                    continue
-            
-            progress_bar.empty()
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Opportunities Found", len(matches))
-            col2.metric("Contracts Scanned", total_symbols)
-            col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f} USDT")
-            col5.metric("Leverage", f"{leverage}x")
-            
-            st.markdown("---")
-            
-            if matches:
-                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
-                st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else:
-                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
-                
-        except Exception as e:
-            st.error(f"Error executing USDT futures scan: {e}")
-else:
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 40)
-    col3.metric("Timeframe", "5m")
-    col4.metric("Margin Used", "$40 USDT")
-    col5.metric("Leverage", "65x")
-    
-    st.markdown("---")
-    st.info("👈 Register or login via the sidebar, configure your parameters, and click **'Run Live USDT Futures Scan'** or **'Run Historical Backtest'** to start.")
