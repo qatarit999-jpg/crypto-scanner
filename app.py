@@ -271,7 +271,6 @@ if 'run_backtest' in locals() and run_backtest:
             exchange_class.options['defaultType'] = 'swap'
             exchange_class.load_markets()
             
-            # Fetch BTC or top coin historical candles for backtesting
             test_symbol = 'BTC/USDT'
             if test_symbol not in exchange_class.symbols:
                 test_symbol = exchange_class.symbols[0]
@@ -279,7 +278,6 @@ if 'run_backtest' in locals() and run_backtest:
             ohlcv = exchange_class.fetch_ohlcv(test_symbol, selected_tf, limit=200)
             df_bt = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             
-            # Calculate indicators for backtest
             delta = df_bt['close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -293,10 +291,9 @@ if 'run_backtest' in locals() and run_backtest:
                 rsi_val = df_bt['rsi'].iloc[i]
                 entry_price = df_bt['close'].iloc[i]
                 
-                if rsi_val < 35: # Simulated Long Backtest Trade
+                if rsi_val < 35:
                     sl = entry_price * 0.98
                     tp = entry_price * 1.03
-                    # Check next 5 candles for outcome
                     trade_won = False
                     for j in range(i+1, min(i+6, len(df_bt))):
                         h = df_bt['high'].iloc[j]
@@ -309,12 +306,12 @@ if 'run_backtest' in locals() and run_backtest:
                             break
                     if trade_won:
                         wins += 1
-                        trades.append({"Candle": i, "Type": "LONG", "Result": "WIN 🟢", P := "+3%"})
+                        trades.append({"Candle": i, "Type": "LONG", "Result": "WIN 🟢"})
                     else:
                         losses += 1
-                        trades.append({"Candle": i, "Type": "LONG", "Result": "LOSS 🔴", P := "-2%"})
+                        trades.append({"Candle": i, "Type": "LONG", "Result": "LOSS 🔴"})
                 
-                elif rsi_val > 65: # Simulated Short Backtest Trade
+                elif rsi_val > 65:
                     sl = entry_price * 1.02
                     tp = entry_price * 0.97
                     trade_won = False
@@ -439,98 +436,4 @@ elif 'run_scan' in locals() and run_scan:
                         c, pc, cl = df['close'].iloc[i], df['close'].iloc[i-1], atr.iloc[i]
                         if pd.isna(cl): cl = 0
                         prev_t = ts[-1]
-                        t = max(prev_t, c - cl) if (c > prev_t and pc > prev_t) else (min(prev_t, c + cl) if (c < prev_t and pc < prev_t) else (c - cl if c > prev_t else c + cl))
-                        ts.append(t)
-                    df['ut_stop'] = ts
-                    ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
-                    
-                    latest = df.iloc[-1]
-                    prev_candle = df.iloc[-2]
-                    rsi = latest['rsi']
-                    price = latest['close']
-                    
-                    volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
-                    is_whale_spike = latest['volume'] > (volume_ma * 3.5) if not pd.isna(volume_ma) else False
-                    
-                    pvt_rising = latest['pvt'] > latest['pvt_signal']
-                    
-                    if rsi < 35 or rsi > 65:
-                        signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
-                        sl = price * 0.98 if signal.startswith("LONG") else price * 1.02
-                        tp1 = price * 1.02 if signal.startswith("LONG") else price * 0.98
-                        tp2 = price * 1.04 if signal.startswith("LONG") else price * 0.96
-                        tp3 = price * 1.06 if signal.startswith("LONG") else price * 0.94
-                        
-                        position_notional = investment * leverage
-                        dollar_risk = position_notional * (abs(price - sl) / price)
-                        
-                        is_bullish_momentum = price > prev_candle['close']
-                        
-                        if signal.startswith("SHORT") and is_bullish_momentum:
-                            advice = "Wait 15m-30m (Bullish Momentum)"
-                        elif signal.startswith("LONG") and not is_bullish_momentum:
-                            advice = "Wait 15m-30m (Bearish Momentum)"
-                        elif signal.startswith("LONG") and pvt_rising:
-                            advice = "Confirmed PVT Buy"
-                        elif signal.startswith("SHORT") and not pvt_rising:
-                            advice = "Confirmed PVT Sell"
-                        else:
-                            advice = "Volume Divergence Warning"
-                        
-                        dev_status = "N/A"
-                        clean_sym = symbol.split('/')[0]
-                        if "BTC" in clean_sym:
-                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
-                        elif "ETH" in clean_sym:
-                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
-                        elif "SOL" in clean_sym:
-                            dev_status = check_github_dev_activity("solana-labs/solana")
-
-                        matches.append({
-                            "Symbol": symbol,
-                            "Direction": signal,
-                            "Price": f"${price:.2f}",
-                            "Stop Loss": f"${sl:.2f}",
-                            "TP1 (1.5R)": f"${tp1:.2f}",
-                            "TP2 (2.5R)": f"${tp2:.2f}",
-                            "TP3 (4.0R)": f"${tp3:.2f}",
-                            "RSI": f"{rsi:.1f}",
-                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
-                            "Dev Pulse": dev_status,
-                            "UT Bot": ut_status,
-                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
-                            "Status": advice
-                        })
-                except Exception:
-                    continue
-            
-            progress_bar.empty()
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Opportunities Found", len(matches))
-            col2.metric("Contracts Scanned", total_symbols)
-            col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f} USDT")
-            col5.metric("Leverage", f"{leverage}x")
-            
-            st.markdown("---")
-            
-            if matches:
-                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
-                st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else:
-                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
-                
-        except Exception as e:
-            st.error(f"Error executing USDT futures scan: {e}")
-else:
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 40)
-    col3.metric("Timeframe", "5m")
-    col4.metric("Margin Used", "$40 USDT")
-    col5.metric("Leverage", "65x")
-    
-    st.markdown("---")
-    st.info("👈 Register or login via the sidebar, configure your parameters, and click **'Run Live USDT Futures Scan'** or **'Run Historical Backtest'** to start.")
+                        t = max(prev_t, c - cl) if (c > prev_t and pc > prev_t) else (min(prev_t, c + cl) if (c < prev_t and pc < prev_t) else (
