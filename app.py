@@ -139,12 +139,14 @@ if run_scan:
             
     progress_bar.empty()
     
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", len(matches))
-    col2.metric("Contracts Scanned", total_symbols)
-    col3.metric("Timeframe", selected_tf)
-    col4.metric("Margin Used", f"${investment:,.0f}")
-    col5.metric("Leverage", f"{leverage}x")
+   # Create 5 columns for your stats layout
+col1, col2, col3, col4, col5 = st.columns(5)
+
+col1.metric(label="Opportunities Found", value=0)
+col2.metric(label="Contracts Scanned", value=52)
+col3.metric(label="Timeframe", value="30m")
+col4.metric(label="Margin Used", value="$20")
+col5.metric(label="Leverage", value="25x")
     
     st.markdown("---")
     
