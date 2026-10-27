@@ -10,7 +10,7 @@ import re
 # Page configuration
 st.set_page_config(page_title="Tether (USDT-M) Futures & Global Auth Scanner", page_icon="⚡", layout="wide")
 
-# Initialize Session State for User Authentication Database
+# Initialize Session State for User Authentication Database & User Count Tracker
 if 'users_db' not in st.session_state:
     st.session_state.users_db = {}
 if 'logged_in_user' not in st.session_state:
@@ -113,6 +113,10 @@ def check_github_dev_activity(repo_path):
 
 # Sidebar Authentication & Controls
 st.sidebar.title("🔐 User Portal & Controls")
+
+# Display live user registration counter metric
+st.sidebar.metric("👥 Total Registered Users", len(st.session_state.users_db))
+st.sidebar.markdown("---")
 
 if st.session_state.logged_in_user is None:
     auth_mode = st.sidebar.radio("Select Mode", ["Login", "Register / Sign Up", "Forgot Credentials"])
