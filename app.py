@@ -5,14 +5,34 @@ import numpy as np
 import urllib.request
 import xml.etree.ElementTree as ET
 import json
+import os
 import re
 
 # Page configuration
 st.set_page_config(page_title="Tether (USDT-M) Futures & Global Auth Scanner", page_icon="⚡", layout="wide")
 
-# Initialize Session State for User Authentication Database & User Count Tracker
+# Persistent User Database File Storage
+USERS_FILE = "users.json"
+
+def load_users_db():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_users_db(db):
+    try:
+        with open(USERS_FILE, "w") as f:
+            json.dump(db, f, indent=4)
+    except Exception:
+        pass
+
+# Initialize Session State with Persistent Storage
 if 'users_db' not in st.session_state:
-    st.session_state.users_db = {}
+    st.session_state.users_db = load_users_db()
 if 'logged_in_user' not in st.session_state:
     st.session_state.logged_in_user = None
 
@@ -165,6 +185,7 @@ if st.session_state.logged_in_user is None:
                     "password": reg_password,
                     "phone": full_phone
                 }
+                save_users_db(st.session_state.users_db) # Save permanently to disk
                 st.sidebar.success("🎉 Registration successful! Please switch to Login.")
                 
     elif auth_mode == "Login":
@@ -173,6 +194,8 @@ if st.session_state.logged_in_user is None:
         login_pass = st.sidebar.text_input("Password", type="password")
         
         if st.sidebar.button("Login", type="primary"):
+            # Reload from disk to ensure latest users are synced
+            st.session_state.users_db = load_users_db()
             if login_user in st.session_state.users_db and st.session_state.users_db[login_user]["password"] == login_pass:
                 st.session_state.logged_in_user = login_user
                 st.sidebar.success(f"Welcome back, {st.session_state.users_db[login_user]['name']}!")
@@ -190,6 +213,7 @@ if st.session_state.logged_in_user is None:
             cleaned_rec_phone = rec_phone_local.strip().lstrip('0')
             target_full_phone = f"{rec_dial_prefix}{cleaned_rec_phone}"
             
+            st.session_state.users_db = load_users_db()
             found_user = None
             for uname, udata in st.session_state.users_db.items():
                 if udata.get("phone") == target_full_phone:
@@ -258,7 +282,7 @@ else:
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and backtesting engine.")
+st.markdown("Strictly USDⓈ-M derivatives screening, TradingView-aligned UT Bot indicators, Price Volume Trend (PVT) confirmation, and backtesting engine.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -440,11 +464,14 @@ elif 'run_scan' in locals() and run_scan:
                     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
                     
                     atr = tr.rolling(window=10).mean()
+                    
                     ts = [df['close'].iloc[0]]
                     for i in range(1, len(df)):
-                        c, pc, cl = df['close'].iloc[i], df['close'].iloc[i-1], atr.iloc[i]
-                        if pd.isna(cl): 
-                            cl = 0
+                        c = df['close'].iloc[i]
+                        pc = df['close'].iloc[i-1]
+                        cl = atr.iloc[i]
+                        if pd.isna(cl):
+                            cl = 0.0
                         prev_t = ts[-1]
                         
                         if c > prev_t and pc > prev_t:
@@ -498,55 +525,4 @@ elif 'run_scan' in locals() and run_scan:
                         if "BTC" in clean_sym:
                             dev_status = check_github_dev_activity("bitcoin/bitcoin")
                         elif "ETH" in clean_sym:
-                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
-                        elif "SOL" in clean_sym:
-                            dev_status = check_github_dev_activity("solana-labs/solana")
-
-                        matches.append({
-                            "Symbol": symbol,
-                            "Direction": signal,
-                            "Price": f"${price:.2f}",
-                            "Stop Loss": f"${sl:.2f}",
-                            "TP1 (1.5R)": f"${tp1:.2f}",
-                            "TP2 (2.5R)": f"${tp2:.2f}",
-                            "TP3 (4.0R)": f"${tp3:.2f}",
-                            "RSI": f"{rsi:.1f}",
-                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
-                            "Dev Pulse": dev_status,
-                            "UT Bot": ut_status,
-                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
-                            "Status": advice
-                        })
-                except Exception:
-                    continue
-            
-            progress_bar.empty()
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Opportunities Found", len(matches))
-            col2.metric("Contracts Scanned", total_symbols)
-            col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f} USDT")
-            col5.metric("Leverage", f"{leverage}x")
-            
-            st.markdown("---")
-            
-            if matches:
-                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
-                st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else:
-                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
-                
-        except Exception as e:
-            st.error(f"Error executing USDT futures scan: {e}")
-else:
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 40)
-    col3.metric("Timeframe", "5m")
-    col4.metric("Margin Used", "$40 USDT")
-    col5.metric("Leverage", "65x")
-    
-    st.markdown("---")
-    st.info("👈 Register or login via the sidebar, configure your parameters, and click **'Run Live USDT Futures Scan'** to start.")
+                            dev_status = check_github_dev_activity("ethereum/go-ethereum
