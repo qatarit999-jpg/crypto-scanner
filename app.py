@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import json
 
 # Page configuration
-st.set_page_config(page_title="Multi-Exchange Crypto RSI, PVT & Alt-Data Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Multi-Exchange Crypto Perpetual Futures Scanner", page_icon="⚡", layout="wide")
 
 # Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
@@ -49,8 +49,8 @@ def check_github_dev_activity(repo_path):
     return "Normal ⚪"
 
 # Sidebar Controls
-st.sidebar.title("⚙️ Scanner Controls")
-st.sidebar.markdown("Configure your exchange, margin, leverage, and timeframes below.")
+st.sidebar.title("⚙️ Futures Scanner Controls")
+st.sidebar.markdown("Configure your exchange, margin, leverage, and timeframes for perpetual swaps.")
 
 # Exchange Selector Dropdown
 exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
@@ -71,11 +71,11 @@ timeframe_map = {
 selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
 selected_tf = timeframe_map[selected_tf_label]
 
-run_scan = st.sidebar.button("🚨 Run Live Market Scan", type="primary")
+run_scan = st.sidebar.button("🚨 Run Live Perpetual Futures Scan", type="primary")
 
 # Main Header
-st.title("⚡ Multi-Exchange Crypto RSI, PVT & Alt-Data Scanner")
-st.markdown("Institutional-grade liquidity screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, regulatory feeds, and automated risk management advisor.")
+st.title("⚡ Multi-Exchange Crypto Perpetual Futures Scanner")
+st.markdown("Strictly derivatives-focused perpetual swap liquidity screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and automated risk management.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -85,7 +85,7 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
 st.markdown("---")
 
 if run_scan:
-    with st.spinner(f"Connecting to {selected_exchange_name} & scanning market with alt-data feeds..."):
+    with st.spinner(f"Connecting to {selected_exchange_name} Perpetual Futures API..."):
         try:
             exchange_map = {
                 "MEXC": ccxt.mexc,
@@ -98,31 +98,48 @@ if run_scan:
             }
             
             exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
-            exchange = exchange_class({'enableRateLimit': True})
+            
+            # Force strict perpetual swap / futures routing
+            exchange = exchange_class({
+                'enableRateLimit': True,
+                'options': {'defaultType': 'swap'}
+            })
             exchange.load_markets()
             
         except Exception as e:
-            st.warning(f"⚠️ {selected_exchange_name} connection blocked or failed ({e}). Automatically falling back to MEXC...")
-            exchange = ccxt.mexc({'enableRateLimit': True})
+            st.warning(f"⚠️ {selected_exchange_name} Futures connection blocked or failed ({e}). Automatically falling back to MEXC Perpetual Futures...")
+            exchange = ccxt.mexc({
+                'enableRateLimit': True,
+                'options': {'defaultType': 'swap'}
+            })
             exchange.load_markets()
 
         try:
+            # Filter strictly for linear USDT perpetual swap contracts
+            all_symbols = [s for s in exchange.symbols if '/USDT' in s and exchange.markets[s].get('linear', False) and exchange.markets[s].get('swap', False)]
+            if not all_symbols:
+                all_symbols = [s for s in exchange.symbols if '/USDT' in s]
+
             priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
-            all_symbols = [s for s in exchange.symbols if '/USDT' in s]
             
-            symbols = [s for s in priority_coins if s in all_symbols]
+            symbols = []
+            for p in priority_coins:
+                base_coin = p.split('/')[0]
+                matching = [s for s in all_symbols if s.startswith(base_coin)]
+                symbols.extend(matching)
+            
             remaining = [s for s in all_symbols if s not in symbols]
-            symbols.extend(remaining[:50 - len(symbols)])
+            symbols.extend(remaining[:40 - len(symbols)])
             
             if not symbols:
-                symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT']
+                symbols = [s for s in all_symbols[:10]]
                 
             matches = []
             total_symbols = len(symbols)
-            progress_bar = st.progress(0, text="Initializing market scan...")
+            progress_bar = st.progress(0, text="Initializing perpetual futures contract scan...")
             
             for idx, symbol in enumerate(symbols):
-                progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning contract {idx+1}/{total_symbols}: {symbol}")
+                progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
                 try:
                     ohlcv = exchange.fetch_ohlcv(symbol, selected_tf, limit=100)
                     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -191,11 +208,12 @@ if run_scan:
                         
                         # GitHub dev check for major assets
                         dev_status = "N/A"
-                        if "BTC" in symbol:
+                        clean_sym = symbol.split('/')[0]
+                        if "BTC" in clean_sym:
                             dev_status = check_github_dev_activity("bitcoin/bitcoin")
-                        elif "ETH" in symbol:
+                        elif "ETH" in clean_sym:
                             dev_status = check_github_dev_activity("ethereum/go-ethereum")
-                        elif "SOL" in symbol:
+                        elif "SOL" in clean_sym:
                             dev_status = check_github_dev_activity("solana-labs/solana")
 
                         matches.append({
@@ -229,20 +247,20 @@ if run_scan:
             st.markdown("---")
             
             if matches:
-                st.success(f"Successfully identified {len(matches)} active institutional trade setups with Alt-Data & PVT filters!")
+                st.success(f"Successfully identified {len(matches)} active perpetual futures swap setups!")
                 st.dataframe(pd.DataFrame(matches), use_container_width=True)
             else:
-                st.warning("No assets currently match extreme RSI & volume criteria on this timeframe.")
+                st.warning("No perpetual futures contracts currently match extreme RSI & volume criteria on this timeframe.")
                 
         except Exception as e:
-            st.error(f"Error executing market scan: {e}")
+            st.error(f"Error executing perpetual futures scan: {e}")
 else:
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 50)
+    col2.metric("Contracts Scanned", 40)
     col3.metric("Timeframe", selected_tf)
     col4.metric("Margin Used", f"${investment:,.0f}")
     col5.metric("Leverage", f"{leverage}x")
     
     st.markdown("---")
-    st.info("👈 Choose your exchange, set your margin and leverage in the sidebar, select a timeframe, and click **'Run Live Market Scan'** to start.")
+    st.info("👈 Choose your exchange, configure your margin and leverage, select a timeframe, and click **'Run Live Perpetual Futures Scan'** to scan live perpetual swaps.")
