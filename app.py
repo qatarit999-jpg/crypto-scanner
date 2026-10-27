@@ -150,7 +150,7 @@ col5.metric(label="Leverage", value="25x")
     
 st.markdown("---")
     
-    if matches:
+if matches:
         st.success(f"Successfully identified {len(matches)} active institutional trade setups!")
         st.dataframe(pd.DataFrame(matches), use_container_width=True)
     else:
