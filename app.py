@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import json
 
 # Page configuration
-st.set_page_config(page_title="Tether (USDT-M) Futures & Market Intel Scanner", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Tether (USDT-M) Futures & Live Intel Scanner", page_icon="⚡", layout="wide")
 
 # Enhanced RSS & Regulatory News Fetcher
 @st.cache_data(ttl=600)
@@ -34,14 +34,45 @@ def get_crypto_news():
             continue
     return news
 
-# Simulated / Cached Key Trader Tweets Feed (e.g., Michael Saylor & Market Influencers)
-@st.cache_data(ttl=900)
-def get_whale_twitter_intel():
-    return [
-        "🐦 **@saylor (Michael Saylor):** \"Saying there is no reason to buy Bitcoin because anyone can create a cryptocurrency is like saying there is no reason to learn English because anyone can create a language.\"",
-        "🐦 **@saylor (Michael Saylor):** Corporate treasury strategy update: Expanding long-term digital asset reserves to back institutional balance sheet growth.",
-        "🐦 **Market Intel Feed:** High-net-worth custodial inflows continuing steady accumulation phases across major linear derivative pairs."
-    ]
+# Live X (Twitter) API Fetcher for Traders / Michael Saylor
+def get_live_tweets(bearer_token, username="saylor"):
+    if not bearer_token or bearer_token.strip() == "":
+        # Fallback cached insights if token is not provided yet
+        return [
+            "🐦 **@saylor (Michael Saylor):** \"Saying there is no reason to buy Bitcoin because anyone can create a cryptocurrency is like saying there is no reason to learn English because anyone can create a language.\"",
+            "🐦 **@saylor (Michael Saylor):** Corporate treasury strategy update: Expanding long-term digital asset reserves to back institutional balance sheet growth.",
+            "💡 *Tip: Enter your X (Twitter) API Bearer Token in the sidebar to fetch live real-time tweets automatically!*"
+        ]
+    
+    try:
+        # Step 1: Get User ID from username
+        user_url = f"https://api.twitter.com/2/users/by/username/{username}"
+        req_user = urllib.request.Request(user_url, headers={'Authorization': f'Bearer {bearer_token}', 'User-Agent': 'v2UserLookupPython'})
+        with urllib.request.urlopen(req_user, timeout=5) as resp:
+            user_data = json.loads(resp.read().decode())
+            user_id = user_data.get('data', {}).get('id')
+            
+        if not user_id:
+            return [f"⚠️ Could not resolve Twitter user ID for @{username}."]
+
+        # Step 2: Fetch recent tweets for that user ID
+        tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets?max_results=5&tweet.fields=created_at"
+        req_tweets = urllib.request.Request(tweets_url, headers={'Authorization': f'Bearer {bearer_token}', 'User-Agent': 'v2UserTweetsPython'})
+        with urllib.request.urlopen(req_tweets, timeout=5) as resp:
+            tweets_data = json.loads(resp.read().decode())
+            tweets = tweets_data.get('data', [])
+            
+            if not tweets:
+                return [f"No recent tweets found for @{username}."]
+                
+            formatted_tweets = []
+            for t in tweets:
+                text = t.get('text', '')
+                formatted_tweets.append(f"🐦 **@{username}:** \"{text}\"")
+            return formatted_tweets
+            
+    except Exception as e:
+        return [f"⚠️ Twitter API Error: {e}. Please check your Bearer Token."]
 
 # GitHub Developer Activity Pulse Checker
 @st.cache_data(ttl=3600)
@@ -59,7 +90,7 @@ def check_github_dev_activity(repo_path):
 
 # Sidebar Controls
 st.sidebar.title("⚙️ USDT Futures Controls")
-st.sidebar.markdown("Strict perpetual swap configuration for Tether futures.")
+st.sidebar.markdown("Configure exchange, leverage, and live API feeds.")
 
 # Exchange Selector Dropdown
 exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
@@ -80,21 +111,26 @@ timeframe_map = {
 selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
 selected_tf = timeframe_map[selected_tf_label]
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("🐦 **Live X (Twitter) Settings**")
+twitter_token = st.sidebar.text_input("X API Bearer Token", type="password", help="Paste your X Developer Bearer Token here to pull live tweets.")
+twitter_handle = st.sidebar.text_input("Twitter Handle to Track", value="saylor", help="Enter username without '@' (e.g. saylor)")
+
 run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and automated risk management.")
+st.markdown("Strictly USDⓈ-M derivatives screening, UT Bot indicators, Price Volume Trend (PVT) confirmation, and live intel feeds.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
-# Top Trader Twitter / X Intel Section (Directly underneath the news box)
-with st.expander("🐦 Top Trader Twitter / X Intel & Whale Insights (e.g. Michael Saylor)"):
-    st.markdown("Real-time tracked commentary from key market-moving figures and institutional macro analysts:")
-    for tweet in get_whale_twitter_intel():
+# Top Trader Twitter / X Intel Section (Live API Integration)
+with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})"):
+    st.markdown(f"Real-time posts fetched directly from **@{twitter_handle}** via Twitter API:")
+    for tweet in get_live_tweets(twitter_token, twitter_handle):
         st.markdown(f"- {tweet}")
 
 st.markdown("---")
