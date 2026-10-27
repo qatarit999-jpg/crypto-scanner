@@ -37,7 +37,6 @@ def get_crypto_news():
 # Live X (Twitter) API Fetcher for Multiple Crypto Leaders
 def get_live_tweets(bearer_token, username="saylor"):
     if not bearer_token or bearer_token.strip() == "":
-        # Fallback cached insights tailored to the selected handle if no token is provided
         fallbacks = {
             "saylor": [
                 "🐦 **@saylor (Michael Saylor):** \"Saying there is no reason to buy Bitcoin because anyone can create a cryptocurrency is like saying there is no reason to learn English...\"",
@@ -61,7 +60,6 @@ def get_live_tweets(bearer_token, username="saylor"):
         return default_tweets
     
     try:
-        # Step 1: Get User ID from username
         user_url = f"https://api.twitter.com/2/users/by/username/{username}"
         req_user = urllib.request.Request(user_url, headers={'Authorization': f'Bearer {bearer_token}', 'User-Agent': 'v2UserLookupPython'})
         with urllib.request.urlopen(req_user, timeout=5) as resp:
@@ -71,7 +69,6 @@ def get_live_tweets(bearer_token, username="saylor"):
         if not user_id:
             return [f"⚠️ Could not resolve Twitter user ID for @{username}."]
 
-        # Step 2: Fetch recent tweets for that user ID
         tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets?max_results=5&tweet.fields=created_at"
         req_tweets = urllib.request.Request(tweets_url, headers={'Authorization': f'Bearer {bearer_token}', 'User-Agent': 'v2UserTweetsPython'})
         with urllib.request.urlopen(req_tweets, timeout=5) as resp:
@@ -157,7 +154,7 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
-# Top Trader Twitter / X Intel Section (Multi-Trader Integration)
+# Top Trader Twitter / X Intel Section
 with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})"):
     st.markdown(f"Real-time commentary from key market figures (Tracking **@{twitter_handle}**):")
     for tweet in get_live_tweets(twitter_token, twitter_handle):
@@ -180,7 +177,6 @@ if run_scan:
             
             exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
             
-            # Absolute enforcement of Swap / Future endpoints
             exchange = exchange_class({
                 'enableRateLimit': True,
                 'options': {
@@ -200,7 +196,6 @@ if run_scan:
             exchange.load_markets()
 
         try:
-            # Strict filtering: Must be a linear swap settled in USDT
             usdt_swap_symbols = []
             for symbol, market in exchange.markets.items():
                 if market.get('swap', False) and market.get('linear', False) and market.get('quote') == 'USDT':
@@ -239,18 +234,15 @@ if run_scan:
                     if live_price is not None:
                         df.loc[df.index[-1], 'close'] = live_price
 
-                    # 1. RSI calculation
                     delta = df['close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                     df['rsi'] = 100 - (100 / (1 + (gain / loss)))
                     
-                    # 2. Price Volume Trend (PVT) calculation
                     price_change_pct = df['close'].pct_change()
                     df['pvt'] = (df['volume'] * price_change_pct).cumsum().fillna(0)
                     df['pvt_signal'] = df['pvt'].ewm(span=10, adjust=False).mean()
                     
-                    # 3. ATR / UT Bot calculation
                     tr1 = df['high'] - df['low']
                     tr2 = np.abs(df['high'] - df['close'].shift())
                     tr3 = np.abs(df['low'] - df['close'].shift())
@@ -298,3 +290,62 @@ if run_scan:
                         elif signal.startswith("SHORT") and not pvt_rising:
                             advice = "⚡ Confirmed PVT Sell"
                         else:
+                            advice = "⚠️ Volume Divergence Warning"
+                        
+                        dev_status = "N/A"
+                        clean_sym = symbol.split('/')[0]
+                        if "BTC" in clean_sym:
+                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
+                        elif "ETH" in clean_sym:
+                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
+                        elif "SOL" in clean_sym:
+                            dev_status = check_github_dev_activity("solana-labs/solana")
+
+                        matches.append({
+                            "Symbol": symbol,
+                            "Direction": signal,
+                            "Price": f"${price:.2f}",
+                            "Stop Loss": f"${sl:.2f}",
+                            "TP1 (1.5R)": f"${tp1:.2f}",
+                            "TP2 (2.5R)": f"${tp2:.2f}",
+                            "TP3 (4.0R)": f"${tp3:.2f}",
+                            "RSI": f"{rsi:.1f}",
+                            "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
+                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
+                            "Dev Pulse": dev_status,
+                            "UT Bot": ut_status,
+                            "Risk ($USDT)": f"-${dollar_risk:.2f}",
+                            "Status": advice
+                        })
+                except Exception:
+                    continue
+            
+            progress_bar.empty()
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Opportunities Found", len(matches))
+            col2.metric("Contracts Scanned", total_symbols)
+            col3.metric("Timeframe", selected_tf)
+            col4.metric("Margin Used", f"${investment:,.0f} USDT")
+            col5.metric("Leverage", f"{leverage}x")
+            
+            st.markdown("---")
+            
+            if matches:
+                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
+                st.dataframe(pd.DataFrame(matches), use_container_width=True)
+            else:
+                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
+                
+        except Exception as e:
+            st.error(f"Error executing USDT futures scan: {e}")
+else:
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Opportunities Found", 0)
+    col2.metric("Contracts Scanned", 40)
+    col3.metric("Timeframe", selected_tf)
+    col4.metric("Margin Used", f"${investment:,.0f} USDT")
+    col5.metric("Leverage", f"{leverage}x")
+    
+    st.markdown("---")
+    st.info("👈 Choose your exchange, configure your USDT margin and leverage, select a timeframe or trader, and click **'Run Live USDT Futures Scan'** to start.")
