@@ -234,6 +234,11 @@ if run_scan:
                     if live_price is not None:
                         df.loc[df.index[-1], 'close'] = live_price
 
+                    # Filter out dead or zero-priced/corrupted micro-cap tokens
+                    current_price = df['close'].iloc[-1]
+                    if pd.isna(current_price) or current_price <= 0.0001:
+                        continue
+
                     delta = df['close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
