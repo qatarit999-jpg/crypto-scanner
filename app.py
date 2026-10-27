@@ -338,3 +338,87 @@ if 'run_backtest' in locals() and run_backtest and st.session_state.logged_in_us
                             break
                     if trade_won:
                         wins += 1
+                        trades.append({"Candle": i, "Type": "LONG", "Result": "WIN 🟢"})
+                    else:
+                        losses += 1
+                        trades.append({"Candle": i, "Type": "LONG", "Result": "LOSS 🔴"})
+                
+                elif rsi_val > 65:
+                    sl = entry_price * 1.02
+                    tp = entry_price * 0.97
+                    trade_won = False
+                    for j in range(i+1, min(i+6, len(df_bt))):
+                        h = df_bt['high'].iloc[j]
+                        l = df_bt['low'].iloc[j]
+                        if h >= sl:
+                            trade_won = False
+                            break
+                        if l <= tp:
+                            trade_won = True
+                            break
+                    if trade_won:
+                        wins += 1
+                        trades.append({"Candle": i, "Type": "SHORT", "Result": "WIN 🟢"})
+                    else:
+                        losses += 1
+                        trades.append({"Candle": i, "Type": "SHORT", "Result": "LOSS 🔴"})
+
+            total_trades = wins + losses
+            win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+            
+            st.subheader(f"📈 Backtest Results for {test_symbol} ({selected_tf})")
+            bcol1, bcol2, bcol3 = st.columns(3)
+            bcol1.metric("Total Simulated Trades", total_trades)
+            bcol2.metric("Win Rate", f"{win_rate:.1f}%")
+            bcol3.metric("Wins / Losses", f"{wins}W / {losses}L")
+            
+            if trades:
+                st.dataframe(pd.DataFrame(trades), use_container_width=True)
+            else:
+                st.info("Not enough extreme RSI triggers found in this historical window to backtest.")
+        except Exception as e:
+            st.error(f"Backtest execution failed: {e}")
+
+elif 'run_scan' in locals() and run_scan:
+    with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
+        try:
+            exchange_map = {
+                "MEXC": ccxt.mexc,
+                "Binance": ccxt.binance,
+                "OKX": ccxt.okx,
+                "Bybit": ccxt.bybit,
+                "Bitget": ccxt.bitget,
+                "Gate.io": ccxt.gate,
+                "KuCoin": ccxt.kucoin
+            }
+            
+            exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
+            exchange = exchange_class({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+            exchange.load_markets()
+            
+        except Exception as e:
+            st.warning(f"⚠️ {selected_exchange_name} connection failed ({e}). Falling back to MEXC...")
+            exchange = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+            exchange.load_markets()
+
+        try:
+            usdt_swap_symbols = []
+            for symbol, market in exchange.markets.items():
+                if market.get('swap', False) and market.get('linear', False) and market.get('quote') == 'USDT':
+                    usdt_swap_symbols.append(symbol)
+            
+            if not usdt_swap_symbols:
+                usdt_swap_symbols = [s for s in exchange.symbols if '/USDT' in s]
+
+            priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
+            
+            raw_symbols = []
+            for p in priority_coins:
+                base = p.split('/')[0]
+                matching = [s for s in usdt_swap_symbols if s.startswith(base + '/') or s.startswith(base + ':')]
+                raw_symbols.extend(matching)
+            
+            remaining = [s for s in usdt_swap_symbols if s not in raw_symbols]
+            raw_symbols.extend(remaining[:40])
+
+            symbols = []
