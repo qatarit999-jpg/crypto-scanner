@@ -51,7 +51,7 @@ selected_tf = timeframe_map[selected_tf_label]
 run_scan = st.sidebar.button("🚨 Run Live Market Scan", type="primary")
 
 # Main Header
-st.title("⚡ Binance & Global Asset RSI Scanner")
+st.title("⚡ Global Asset RSI Scanner")
 st.markdown("Institutional-grade liquidity screening, UT Bot indicators, and automated risk management advisor.")
 
 # News Expander
@@ -62,12 +62,12 @@ with st.expander("📰 Live Macro, FED, OCC, CPI, PPI & London Crypto Intel"):
 st.markdown("---")
 
 if run_scan:
-    with st.spinner("Connecting to Binance Exchange & scanning market liquidity..."):
+    with st.spinner("Connecting to exchange & scanning market liquidity..."):
         try:
-            exchange = ccxt.binance({'enableRateLimit': True})
+            exchange = ccxt.mexc({'enableRateLimit': True})
             exchange.load_markets()
             
-            symbols = [s for s in exchange.symbols if '/USDT:USDT' in s or '/USDT' in s][:52]
+            symbols = [s for s in exchange.symbols if '/USDT' in s][:52]
             if not symbols:
                 symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ADA/USDT']
                 
