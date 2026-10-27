@@ -296,7 +296,9 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
 
 st.markdown("---")
 
-if 'run_backtest' in locals() and run_backtest and st.session_state.logged_in_user == ADMIN_USERNAME:
+# Independent Backtest Execution Block
+is_admin = (st.session_state.logged_in_user == ADMIN_USERNAME)
+if is_admin and 'run_backtest' in locals() and run_backtest:
     with st.spinner(f"Running historical backtest simulation on {selected_exchange_name} ({selected_tf})..."):
         try:
             exchange_class = getattr(ccxt, selected_exchange_name.lower())()
@@ -373,52 +375,4 @@ if 'run_backtest' in locals() and run_backtest and st.session_state.logged_in_us
             bcol3.metric("Wins / Losses", f"{wins}W / {losses}L")
             
             if trades:
-                st.dataframe(pd.DataFrame(trades), use_container_width=True)
-            else:
-                st.info("Not enough extreme RSI triggers found in this historical window to backtest.")
-        except Exception as e:
-            st.error(f"Backtest execution failed: {e}")
-
-elif 'run_scan' in locals() and run_scan:
-    with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
-        try:
-            exchange_map = {
-                "MEXC": ccxt.mexc,
-                "Binance": ccxt.binance,
-                "OKX": ccxt.okx,
-                "Bybit": ccxt.bybit,
-                "Bitget": ccxt.bitget,
-                "Gate.io": ccxt.gate,
-                "KuCoin": ccxt.kucoin
-            }
-            
-            exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
-            exchange = exchange_class({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
-            exchange.load_markets()
-            
-        except Exception as e:
-            st.warning(f"⚠️ {selected_exchange_name} connection failed ({e}). Falling back to MEXC...")
-            exchange = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
-            exchange.load_markets()
-
-        try:
-            usdt_swap_symbols = []
-            for symbol, market in exchange.markets.items():
-                if market.get('swap', False) and market.get('linear', False) and market.get('quote') == 'USDT':
-                    usdt_swap_symbols.append(symbol)
-            
-            if not usdt_swap_symbols:
-                usdt_swap_symbols = [s for s in exchange.symbols if '/USDT' in s]
-
-            priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
-            
-            raw_symbols = []
-            for p in priority_coins:
-                base = p.split('/')[0]
-                matching = [s for s in usdt_swap_symbols if s.startswith(base + '/') or s.startswith(base + ':')]
-                raw_symbols.extend(matching)
-            
-            remaining = [s for s in usdt_swap_symbols if s not in raw_symbols]
-            raw_symbols.extend(remaining[:40])
-
-            symbols = []
+                st
