@@ -119,20 +119,46 @@ if st.session_state.logged_in_user is None:
         reg_name = st.sidebar.text_input("Full Name")
         reg_username = st.sidebar.text_input("Choose Username")
         reg_password = st.sidebar.text_input("Create Password", type="password")
-        reg_phone = st.sidebar.text_input("Phone Number (with Country Code, e.g. +92..., +1..., +44...)")
+        
+        # Country codes dropdown dictionary
+        country_dial_codes = {
+            "Pakistan (+92)": "+92",
+            "United States / Canada (+1)": "+1",
+            "United Kingdom (+44)": "+44",
+            "United Arab Emirates (+971)": "+971",
+            "Saudi Arabia (+966)": "+966",
+            "India (+91)": "+91",
+            "Germany (+49)": "+49",
+            "France (+33)": "+33",
+            "Turkey (+90)": "+90",
+            "Qatar (+974)": "+974",
+            "Australia (+61)": "+61",
+            "Canada (+1)": "+1",
+            "Singapore (+65)": "+65",
+            "Malaysia (+60)": "+60",
+            "Other / International": "+"
+        }
+        
+        selected_country_label = st.sidebar.selectbox("Select Country / Dial Code", list(country_dial_codes.keys()))
+        dial_prefix = country_dial_codes[selected_country_label]
+        
+        reg_phone_local = st.sidebar.text_input("Phone Number (e.g. 3001234567 or without leading zero)")
         
         if st.sidebar.button("Register Account", type="primary"):
-            if not reg_name or not reg_username or not reg_password or not reg_phone:
+            cleaned_phone_local = reg_phone_local.strip().lstrip('0')
+            full_phone = f"{dial_prefix}{cleaned_phone_local}"
+            
+            if not reg_name or not reg_username or not reg_password or not reg_phone_local:
                 st.sidebar.error("⚠️ Please fill in all registration fields.")
             elif reg_username in st.session_state.users_db:
                 st.sidebar.error("⚠️ Username already exists. Choose another.")
-            elif not re.match(r"^\+[1-9]\d{1,14}$", reg_phone.strip()):
-                st.sidebar.error("⚠️ Invalid international phone format. Please include '+' and country code (e.g., +923001234567, +14155552671).")
+            elif not re.match(r"^\+[1-9]\d{6,14}$", full_phone):
+                st.sidebar.error("⚠️ Invalid phone number format. Please check your digits.")
             else:
                 st.session_state.users_db[reg_username] = {
                     "name": reg_name,
                     "password": reg_password,
-                    "phone": reg_phone.strip()
+                    "phone": full_phone
                 }
                 st.sidebar.success("🎉 Registration successful! Please switch to Login.")
                 
