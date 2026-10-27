@@ -134,7 +134,6 @@ def check_github_dev_activity(repo_path):
 # Sidebar Authentication & Controls
 st.sidebar.title("🔐 User Portal & Controls")
 
-# Display live user registration counter metric
 st.sidebar.metric("👥 Total Registered Users", len(st.session_state.users_db))
 st.sidebar.markdown("---")
 
@@ -296,9 +295,8 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
 
 st.markdown("---")
 
-# Independent Backtest Execution Block
-is_admin = (st.session_state.logged_in_user == ADMIN_USERNAME)
-if is_admin and 'run_backtest' in locals() and run_backtest:
+# Execution Handler for Backtest (Admin Only)
+if 'run_backtest' in locals() and run_backtest and st.session_state.logged_in_user == ADMIN_USERNAME:
     with st.spinner(f"Running historical backtest simulation on {selected_exchange_name} ({selected_tf})..."):
         try:
             exchange_class = getattr(ccxt, selected_exchange_name.lower())()
@@ -375,4 +373,81 @@ if is_admin and 'run_backtest' in locals() and run_backtest:
             bcol3.metric("Wins / Losses", f"{wins}W / {losses}L")
             
             if trades:
-                st
+                st.dataframe(pd.DataFrame(trades), use_container_width=True)
+            else:
+                st.info("Not enough extreme RSI triggers found in this historical window to backtest.")
+        except Exception as e:
+            st.error(f"Backtest execution failed: {e}")
+
+# Execution Handler for Live Scanning
+elif 'run_scan' in locals() and run_scan:
+    with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
+        try:
+            exchange_map = {
+                "MEXC": ccxt.mexc,
+                "Binance": ccxt.binance,
+                "OKX": ccxt.okx,
+                "Bybit": ccxt.bybit,
+                "Bitget": ccxt.bitget,
+                "Gate.io": ccxt.gate,
+                "KuCoin": ccxt.kucoin
+            }
+            
+            exchange_class = exchange_map.get(selected_exchange_name, ccxt.mexc)
+            exchange = exchange_class({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+            exchange.load_markets()
+            
+        except Exception as e:
+            st.warning(f"⚠️ {selected_exchange_name} connection failed ({e}). Falling back to MEXC...")
+            exchange = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+            exchange.load_markets()
+
+        try:
+            usdt_swap_symbols = []
+            for symbol, market in exchange.markets.items():
+                if market.get('swap', False) and market.get('linear', False) and market.get('quote') == 'USDT':
+                    usdt_swap_symbols.append(symbol)
+            
+            if not usdt_swap_symbols:
+                usdt_swap_symbols = [s for s in exchange.symbols if '/USDT' in s]
+
+            priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT']
+            
+            raw_symbols = []
+            for p in priority_coins:
+                base = p.split('/')[0]
+                matching = [s for s in usdt_swap_symbols if s.startswith(base + '/') or s.startswith(base + ':')]
+                raw_symbols.extend(matching)
+            
+            remaining = [s for s in usdt_swap_symbols if s not in raw_symbols]
+            raw_symbols.extend(remaining[:40])
+
+            symbols = []
+            seen = set()
+            for s in raw_symbols:
+                if s not in seen:
+                    seen.add(s)
+                    symbols.append(s)
+                
+            matches = []
+            total_symbols = len(symbols)
+            progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts...")
+            
+            for idx, symbol in enumerate(symbols):
+                progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
+                try:
+                    ticker = exchange.fetch_ticker(symbol)
+                    live_price = ticker.get('last') or ticker.get('close')
+
+                    ohlcv = exchange.fetch_ohlcv(symbol, selected_tf, limit=100)
+                    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                    
+                    if live_price is not None:
+                        df.loc[df.index[-1], 'close'] = live_price
+
+                    current_price = df['close'].iloc[-1]
+                    if pd.isna(current_price) or current_price <= 0.0001:
+                        continue
+
+                    delta = df['close'].diff()
+                    gain = (
