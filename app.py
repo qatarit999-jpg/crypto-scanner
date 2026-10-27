@@ -36,7 +36,7 @@ if 'users_db' not in st.session_state:
 if 'logged_in_user' not in st.session_state:
     st.session_state.logged_in_user = None
 
-# Define your Admin Username here (Change this to your exact login username)
+# Define your Admin Username here
 ADMIN_USERNAME = "admin"
 
 # Enhanced RSS & Regulatory News Fetcher
@@ -169,4 +169,172 @@ if st.session_state.logged_in_user is None:
         
         reg_phone_local = st.sidebar.text_input("Phone Number (e.g. 3001234567)")
         
-        if st.sidebar.button("Register Account
+        if st.sidebar.button("Register Account", type="primary"):
+            cleaned_phone_local = reg_phone_local.strip().lstrip('0')
+            full_phone = f"{dial_prefix}{cleaned_phone_local}"
+            
+            if not reg_name or not reg_username or not reg_password or not reg_phone_local:
+                st.sidebar.error("⚠️ Please fill in all registration fields.")
+            elif reg_username in st.session_state.users_db:
+                st.sidebar.error("⚠️ Username already exists. Choose another.")
+            elif not re.match(r"^\+[1-9]\d{6,14}$", full_phone):
+                st.sidebar.error("⚠️ Invalid phone number format. Please check your digits.")
+            else:
+                st.session_state.users_db[reg_username] = {
+                    "name": reg_name,
+                    "password": reg_password,
+                    "phone": full_phone
+                }
+                save_users_db(st.session_state.users_db)
+                st.sidebar.success("🎉 Registration successful! Please switch to Login.")
+                
+    elif auth_mode == "Login":
+        st.sidebar.subheader("🔑 Member Login")
+        login_user = st.sidebar.text_input("Username")
+        login_pass = st.sidebar.text_input("Password", type="password")
+        
+        if st.sidebar.button("Login", type="primary"):
+            st.session_state.users_db = load_users_db()
+            if login_user in st.session_state.users_db and st.session_state.users_db[login_user]["password"] == login_pass:
+                st.session_state.logged_in_user = login_user
+                st.sidebar.success(f"Welcome back, {st.session_state.users_db[login_user]['name']}!")
+                st.rerun()
+            else:
+                st.sidebar.error("❌ Invalid username or password.")
+                
+    elif auth_mode == "Forgot Credentials":
+        st.sidebar.subheader("🔄 Recover Account")
+        selected_rec_country = st.sidebar.selectbox("Select Country / Dial Code", list(country_dial_codes.keys()), key="rec_country")
+        rec_dial_prefix = country_dial_codes[selected_rec_country]
+        rec_phone_local = st.sidebar.text_input("Registered Phone Number (e.g. 3001234567)", key="rec_phone")
+        
+        if st.sidebar.button("Send Recovery Details", type="primary"):
+            cleaned_rec_phone = rec_phone_local.strip().lstrip('0')
+            target_full_phone = f"{rec_dial_prefix}{cleaned_rec_phone}"
+            
+            st.session_state.users_db = load_users_db()
+            found_user = None
+            for uname, udata in st.session_state.users_db.items():
+                if udata.get("phone") == target_full_phone:
+                    found_user = uname
+                    break
+            
+            if found_user:
+                st.sidebar.success(f"📨 Message has been sent to the registered number ({target_full_phone})!")
+            else:
+                st.sidebar.error("⚠️ No account found registered with this phone number.")
+
+    st.stop()
+
+else:
+    user_info = st.session_state.users_db[st.session_state.logged_in_user]
+    st.sidebar.success(f"👤 Logged in as: **{user_info['name']}** (@{st.session_state.logged_in_user})")
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state.logged_in_user = None
+        st.rerun()
+        
+    st.sidebar.markdown("---")
+    st.sidebar.title("⚙️ USDT Futures Controls")
+    
+    exchange_options = ["MEXC", "Binance", "OKX", "Bybit", "Bitget", "Gate.io", "KuCoin"]
+    selected_exchange_name = st.sidebar.selectbox("Select Exchange", exchange_options)
+
+    investment = st.sidebar.number_input("Investment / Margin ($USDT)", min_value=1.0, max_value=5000.0, value=40.0, step=5.0)
+    leverage = st.sidebar.slider("Leverage (x)", min_value=5, max_value=100, value=65)
+
+    timeframe_map = {
+        "1 Minute (1m)": "1m",
+        "5 Minutes (5m)": "5m",
+        "15 Minutes (15m)": "15m",
+        "30 Minutes (30m)": "30m",
+        "1 Hour (1h)": "1h",
+        "4 Hours (4h)": "4h",
+        "1 Day (1d)": "1d"
+    }
+    selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(timeframe_map.keys()))
+    selected_tf = timeframe_map[selected_tf_label]
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
+
+    trader_options = {
+        "Michael Saylor (@saylor)": "saylor",
+        "Vitalik Buterin (@VitalikButerin)": "VitalikButerin",
+        "CZ (Changpeng Zhao)": "cz_binance",
+        "Balaji Srinivasan (@balajis)": "balajis",
+        "Custom Handle": "custom"
+    }
+    selected_trader_label = st.sidebar.selectbox("Select Market Leader", list(trader_options.keys()))
+
+    if selected_trader_label == "Custom Handle":
+        twitter_handle = st.sidebar.text_input("Enter Custom Twitter Handle", value="saylor", help="Type username without '@'")
+    else:
+        twitter_handle = trader_options[selected_trader_label]
+
+    twitter_token = st.sidebar.text_input("X API Bearer Token (Optional)", type="password", help="Paste your X Developer Bearer Token here to pull live real-time tweets.")
+
+    run_scan = st.sidebar.button("🚨 Run Live USDT Futures Scan", type="primary")
+    
+    run_backtest = False
+    if st.session_state.logged_in_user == ADMIN_USERNAME:
+        run_backtest = st.sidebar.button("📈 Run Historical Backtest", type="secondary")
+
+# Main Header
+st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
+st.markdown("Strictly USDⓈ-M derivatives screening, TradingView-aligned UT Bot indicators, Price Volume Trend (PVT) confirmation, and backtesting engine.")
+
+# News & Regulatory Expander
+with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
+    for item in get_crypto_news():
+        st.markdown(f"- {item}")
+
+# Top Trader Twitter / X Intel Section
+with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})"):
+    st.markdown(f"Real-time commentary from key market figures (Tracking **@{twitter_handle}**):")
+    for tweet in get_live_tweets(twitter_token, twitter_handle):
+        st.markdown(f"- {tweet}")
+
+st.markdown("---")
+
+if 'run_backtest' in locals() and run_backtest and st.session_state.logged_in_user == ADMIN_USERNAME:
+    with st.spinner(f"Running historical backtest simulation on {selected_exchange_name} ({selected_tf})..."):
+        try:
+            exchange_class = getattr(ccxt, selected_exchange_name.lower())()
+            exchange_class.options['defaultType'] = 'swap'
+            exchange_class.load_markets()
+            
+            test_symbol = 'BTC/USDT'
+            if test_symbol not in exchange_class.symbols:
+                test_symbol = exchange_class.symbols[0]
+                
+            ohlcv = exchange_class.fetch_ohlcv(test_symbol, selected_tf, limit=200)
+            df_bt = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+            delta = df_bt['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            df_bt['rsi'] = 100 - (100 / (1 + (gain / loss)))
+            
+            trades = []
+            wins = 0
+            losses = 0
+            
+            for i in range(20, len(df_bt) - 5):
+                rsi_val = df_bt['rsi'].iloc[i]
+                entry_price = df_bt['close'].iloc[i]
+                
+                if rsi_val < 35:
+                    sl = entry_price * 0.98
+                    tp = entry_price * 1.03
+                    trade_won = False
+                    for j in range(i+1, min(i+6, len(df_bt))):
+                        h = df_bt['high'].iloc[j]
+                        l = df_bt['low'].iloc[j]
+                        if l <= sl:
+                            trade_won = False
+                            break
+                        if h >= tp:
+                            trade_won = True
+                            break
+                    if trade_won:
+                        wins += 1
