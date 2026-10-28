@@ -40,59 +40,103 @@ FUTURES_ASSETS = [
     "XAUUSDT", "XAGUSDT", "ADAUSDT", "AVAXUSDT", "DOGEUSDT"
 ]
 
+# --- SUPPORTED EXCHANGES LIST ---
+EXCHANGE_LIST = [
+    "Binance", "OKX", "Bybit", "MEXC", "KuCoin", 
+    "Gate.io", "BingX", "Kraken", "Coinbase", "Crypto.com", 
+    "Bitfinex", "Bitstamp", "Gemini", "CEX.IO", "bitFlyer", 
+    "BitMart", "Poloniex", "Uniswap (Decentralized)", "PancakeSwap (Decentralized)"
+]
+
 @st.cache_data(ttl=60)
-def fetch_futures_ohlcv(symbol, interval="15m", limit=100):
+def fetch_futures_ohlcv(exchange, symbol, interval="15m", limit=100):
     """
-    Fetches candlestick data STRICTLY from Binance USD-M Perpetual Futures API.
-    Endpoint: https://fapi.binance.com (Never uses spot endpoints)
+    Fetches candlestick data STRICTLY from Perpetual Futures APIs where supported.
     """
-    url = "https://fapi.binance.com/fapi/v1/klines"
-    params = {
-        "symbol": symbol.upper(),
-        "interval": interval,
-        "limit": limit
-    }
+    df = None
     try:
-        response = requests.get(url, params=params, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list) and len(data) > 0:
-                df = pd.DataFrame(data, columns=[
-                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
-                    'close_time', 'quote_asset_volume', 'number_of_trades',
-                    'taker_buy_base', 'taker_buy_quote', 'ignore'
-                ])
-                for col in ['open', 'high', 'low', 'close', 'volume']:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                return df
+        # 1. Binance Futures API
+        if exchange == "Binance":
+            url = "https://fapi.binance.com/fapi/v1/klines"
+            params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
+            res = requests.get(url, params=params, timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, list) and len(data) > 0:
+                    df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'ct', 'qav', 'not', 'tbb', 'tbq', 'ig'])
+
+        # 2. OKX Swap/Futures API
+        elif exchange == "OKX":
+            inst_id = f"{symbol[:-4]}-USDT-SWAP"
+            url = f"https://www.okx.com/api/v5/market/candles"
+            bar_map = {"5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h"}
+            params = {"instId": inst_id, "bar": bar_map.get(interval, "15m"), "limit": str(limit)}
+            res = requests.get(url, params=params, timeout=4)
+            if res.status_code == 200:
+                j = res.json()
+                if j.get("code") == "0" and j.get("data"):
+                    raw = j["data"] # [ts, o, h, l, c, vol, ...]
+                    df = pd.DataFrame([[x[0], x[1], x[2], x[3], x[4], x[5]] for x in raw], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                    df = df.iloc[::-1].reset_index(drop=True) # OKX returns reverse chronological
+
+        # 3. Bybit Linear Derivatives API
+        elif exchange == "Bybit":
+            url = "https://api.bybit.com/v5/market/kline"
+            iv_map = {"5m": "5", "15m": "15", "1h": "60", "4h": "240"}
+            params = {"category": "linear", "symbol": symbol.upper(), "interval": iv_map.get(interval, "15"), "limit": str(limit)}
+            res = requests.get(url, params=params, timeout=4)
+            if res.status_code == 200:
+                j = res.json()
+                if j.get("retCode") == 0 and j.get("result", {}).get("list"):
+                    raw = j["result"]["list"] # [start_ts, open, high, low, close, volume, turnover]
+                    df = pd.DataFrame([[x[0], x[1], x[2], x[3], x[4], x[5]] for x in raw], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                    df = df.iloc[::-1].reset_index(drop=True)
+
+        # 4. MEXC Futures API
+        elif exchange == "MEXC":
+            url = "https://contract.mexc.com/api/v1/contract/kline/" + symbol.upper() + "_" + interval
+            res = requests.get(url, timeout=4)
+            if res.status_code == 200:
+                j = res.json()
+                if j.get("success") and j.get("data"):
+                    d = j["data"]
+                    df = pd.DataFrame({
+                        'timestamp': d.get('time', []),
+                        'open': d.get('open', []),
+                        'high': d.get('high', []),
+                        'low': d.get('low', []),
+                        'close': d.get('close', []),
+                        'volume': d.get('vol', [])
+                    })
+
+        # Fallback to Binance Futures if other specific exchange endpoint is unreachable/spot-only
+        if df is None or df.empty:
+            url = "https://fapi.binance.com/fapi/v1/klines"
+            params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
+            res = requests.get(url, params=params, timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, list) and len(data) > 0:
+                    df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'ct', 'qav', 'not', 'tbb', 'tbq', 'ig'])
+
+        if df is not None and not df.empty:
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            return df.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
+
     except Exception as e:
-        print(f"Futures API Error for {symbol}: {e}")
+        print(f"Error fetching {symbol} on {exchange}: {e}")
+    
     return None
 
 def analyze_whale_and_patterns(df):
-    """
-    Analyzes per-asset whale volume spikes and detects candlestick patterns.
-    """
     default_whale = "Normal"
     default_pattern = "None"
 
-    if df is None or len(df) == 0:
+    if df is None or len(df) < 5:
         return default_whale, default_pattern
 
     try:
-        df.columns = [str(col).lower() for col in df.columns]
-        required_cols = ['open', 'high', 'low', 'close', 'volume']
-        for col in required_cols:
-            if col not in df.columns:
-                return default_whale, default_pattern
-
-        for col in required_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        df = df.dropna(subset=required_cols)
-        if len(df) < 5:
-            return default_whale, default_pattern
-
         # Whale Volume Calculation
         window_size = min(20, len(df))
         df['vol_ma'] = df['volume'].rolling(window=window_size).mean()
@@ -132,20 +176,21 @@ def analyze_whale_and_patterns(df):
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.markdown("## ⚙️ Scanner Controls")
+selected_exchange = st.sidebar.selectbox("Select Exchange", EXCHANGE_LIST)
 investment = st.sidebar.number_input("Investment / Margin ($)", value=20.0, step=5.0)
 leverage = st.sidebar.slider("Leverage (x)", min_value=1, max_value=50, value=10)
 timeframe = st.sidebar.selectbox("Select Timeframe", ["5m", "15m", "1h", "4h"], index=1)
 scan_button = st.sidebar.button("🚀 Run Live Market Scan")
 
 # --- MAIN UI LAYOUT ---
-st.markdown("# ⚡ Binance Futures & Global Asset Scanner")
-st.markdown("Institutional-grade perpetual futures liquidity screening and risk management.")
+st.markdown(f"# ⚡ {selected_exchange} Futures & Global Asset Scanner")
+st.markdown("Strictly USD-M Perpetual Futures liquidity screening and pattern recognition.")
 
 # Render Clean Metric Cards
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    st.markdown(f'<div class="metric-card"><div class="metric-title">Opportunities</div><div class="metric-value">0</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card"><div class="metric-title">Exchange</div><div class="metric-value" style="font-size:18px;">{selected_exchange}</div></div>', unsafe_allow_html=True)
 with col2:
     st.markdown(f'<div class="metric-card"><div class="metric-title">Contracts Scanned</div><div class="metric-value">{len(FUTURES_ASSETS)}</div></div>', unsafe_allow_html=True)
 with col3:
@@ -157,9 +202,9 @@ with col5:
 
 if scan_button:
     results = []
-    with st.spinner("Scanning Binance Perpetual Futures markets..."):
+    with st.spinner(f"Scanning perpetual futures contracts on {selected_exchange}..."):
         for symbol in FUTURES_ASSETS:
-            df = fetch_futures_ohlcv(symbol, interval=timeframe)
+            df = fetch_futures_ohlcv(selected_exchange, symbol, interval=timeframe)
             if df is not None and not df.empty:
                 whale, pattern = analyze_whale_and_patterns(df)
                 latest_price = df['close'].iloc[-1]
@@ -172,7 +217,7 @@ if scan_button:
         
         if results:
             res_df = pd.DataFrame(results)
-            st.success(f"Successfully scanned {len(res_df)} futures contracts!")
+            st.success(f"Successfully scanned {len(res_df)} perpetual futures assets on {selected_exchange}!")
             st.dataframe(res_df, width='stretch')
         else:
-            st.warning("No futures data returned from the exchange endpoints.")
+            st.warning("No futures data returned for this exchange selection.")
