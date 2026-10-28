@@ -114,20 +114,6 @@ def get_live_tweets(bearer_token, username="saylor"):
     except Exception as e:
         return [f"⚠️ Twitter API Error: {e}. Please check your Bearer Token."]
 
-# GitHub Developer Activity Pulse Checker
-@st.cache_data(ttl=3600)
-def check_github_dev_activity(repo_path):
-    try:
-        url = f"https://api.github.com/repos/{repo_path}/commits?per_page=3"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            commits = json.loads(resp.read().decode())
-            if len(commits) > 0:
-                return "Active Dev Pulse 🟢"
-    except Exception:
-        pass
-    return "Normal ⚪"
-
 # Sidebar Authentication & Controls
 st.sidebar.title("🔐 User Portal & Controls")
 
@@ -446,7 +432,6 @@ if 'run_scan' in locals() and run_scan:
                     rsi = latest['rsi']
                     price = latest['close']
                     
-                    # Objective Price Action / Bar State (Replaces unreliable guess patterns)
                     open_p = latest['open']
                     close_p = latest['close']
                     high_p = latest['high']
@@ -463,9 +448,16 @@ if 'run_scan' in locals() and run_scan:
                     else:
                         bar_state = f"⚖️ Consolidation @ ${price:.2f}"
                     
-                    # Reliable Volume Spike Detection (> 1.6x of 20-period volume MA)
-                    volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
-                    is_whale_spike = latest['volume'] > (volume_ma * 1.6) if not pd.isna(volume_ma) and volume_ma > 0 else False
+                    # Enhanced Whale Volume / Large Block Ratio Anomaly Detection
+                    # Calculates volume spike ratio relative to a 30-period rolling baseline
+                    vol_ma = df['volume'].rolling(window=30).mean().iloc[-1]
+                    vol_std = df['volume'].rolling(window=30).std().iloc[-1]
+                    
+                    if not pd.isna(vol_ma) and not pd.isna(vol_std) and vol_std > 0:
+                        z_score = (latest['volume'] - vol_ma) / vol_std
+                        is_whale_spike = z_score > 1.5 or latest['volume'] > (vol_ma * 2.2)
+                    else:
+                        is_whale_spike = latest['volume'] > (vol_ma * 2.2) if not pd.isna(vol_ma) else False
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
@@ -490,15 +482,6 @@ if 'run_scan' in locals() and run_scan:
                                 advice = "⏳ Wait: Bearish Momentum Active"
                             else:
                                 advice = "🚀 Ready: Confirmed Long Entry"
-                        
-                        dev_status = "N/A"
-                        clean_sym = symbol.split('/')[0]
-                        if "BTC" in clean_sym:
-                            dev_status = check_github_dev_activity("bitcoin/bitcoin")
-                        elif "ETH" in clean_sym:
-                            dev_status = check_github_dev_activity("ethereum/go-ethereum")
-                        elif "SOL" in clean_sym:
-                            dev_status = check_github_dev_activity("solana-labs/solana")
 
                         matches.append({
                             "Symbol": symbol,
@@ -511,8 +494,7 @@ if 'run_scan' in locals() and run_scan:
                             "TP3 (4.0R)": f"${tp3:.2f}",
                             "RSI": f"{rsi:.1f}",
                             "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Spike 🟢" if is_whale_spike else "Normal ⚪",
-                            "Dev Pulse": dev_status,
+                            "Whale Vol": "🐋 Whale Spike 🟢" if is_whale_spike else "Normal ⚪",
                             "UT Bot": ut_status,
                             "Risk ($USDT)": f"-${dollar_risk:.2f}",
                             "Status": advice
