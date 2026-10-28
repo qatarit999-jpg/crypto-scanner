@@ -676,7 +676,7 @@ if st.session_state.scan_results:
         d_col1, d_col2, d_col3, d_col4 = st.columns(4)
         d_col1.metric("Signal Direction", selected_item["Direction"])
         d_col2.metric("Entry Price", selected_item["Entry Price"])
-        d_col3.metric("Zone Status", selected_item["Zone Status"])
+        d_col3.metric("Zone Status", selected_item.get("Zone Status", "Normal Range ⚪"))
         d_col4.metric("Support / Resistance", f"S1: {selected_item['Support 1']} | R1: {selected_item['Resistance 1']}")
         
         st.info(f"**Trader Advisory & Status:** {selected_item['Status']} | **Fair Value Gap:** {selected_item['Fair Value Gap']} | **RSI:** {selected_item['RSI']}")
