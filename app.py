@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import streamlit.components.v1 as components
 import urllib.request
+import urllib.parse
 import xml.etree.ElementTree as ET
 import json
 import os
@@ -238,6 +239,12 @@ else:
     selected_tf = timeframe_map[selected_tf_label]
 
     st.sidebar.markdown("---")
+    st.sidebar.markdown("🔔 **WhatsApp & System Alarm Settings**")
+    enable_whatsapp_alert = st.sidebar.checkbox("Enable Free WhatsApp Alerts", value=False)
+    whatsapp_phone = st.sidebar.text_input("WhatsApp Phone (e.g. +923001234567)", value="")
+    whatsapp_apikey = st.sidebar.text_input("CallMeBot API Key", type="password", help="Get free key by messaging 'I allow callmebot to send me messages' to their bot.")
+
+    st.sidebar.markdown("---")
     st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
 
     trader_options = {
@@ -460,6 +467,9 @@ if 'run_scan' in locals() and run_scan:
             total_symbols = len(symbols)
             progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts...")
             
+            # Track triggers for sound/alarm/whatsapp execution
+            triggered_events = []
+            
             for idx, symbol in enumerate(symbols):
                 progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
                 try:
@@ -567,7 +577,7 @@ if 'run_scan' in locals() and run_scan:
                     except Exception:
                         pass
 
-                    # Calculate 2 Support Zones and 2 Resistance Zones (TradingView Aligned Pivot/ATR)
+                    # Calculate 2 Support Zones and 2 Resistance Zones
                     recent_lows = df['low'].rolling(20).min().iloc[-1]
                     recent_highs = df['high'].rolling(20).max().iloc[-1]
                     current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else price * 0.01
@@ -577,7 +587,7 @@ if 'run_scan' in locals() and run_scan:
                     r1 = price + current_atr
                     r2 = recent_highs if recent_highs > price else price + (current_atr * 2)
 
-                    # Expanded Proximity Reversal & Bearish Trigger Marking (Threshold set to 2.5% for active detection)
+                    # Proximity Reversal & Bearish Trigger Marking (Calibrated to 2.5%)
                     zone_status = "Normal Range ⚪"
                     if abs(price - s1) / price <= 0.025 or abs(price - s2) / price <= 0.025:
                         zone_status = "🟢 Bullish Reversal Bounce Triggered near Support"
@@ -617,6 +627,10 @@ if 'run_scan' in locals() and run_scan:
                             else:
                                 advice = "🚀 Ready: Confirmed Long Entry"
 
+                        # Track trigger for alarm / whatsapp if zone triggered
+                        if "Triggered" in zone_status or "Ready" in advice:
+                            triggered_events.append(f"{symbol} -> {signal} @ ${price:.2f} ({zone_status})")
+
                         matches.append({
                             "Symbol": symbol,
                             "Direction": signal,
@@ -647,6 +661,39 @@ if 'run_scan' in locals() and run_scan:
             progress_bar.empty()
             st.session_state.scan_results = matches
             
+            # Execute Double Shout Audio Alarm if triggers found
+            if triggered_events:
+                st.toast(f"🚨 ALERT: {len(triggered_events)} active zone triggers found!", icon="🔔")
+                
+                # Browser Twice-Shout Web Audio API Beep
+                alarm_js = """
+                <script>
+                function playBeep() {
+                    var context = new (window.AudioContext || window.webkitAudioContext)();
+                    var osc = context.createOscillator();
+                    var gain = context.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = 880;
+                    osc.connect(gain);
+                    gain.connect(context.destination);
+                    osc.start();
+                    setTimeout(function() { osc.stop(); }, 300);
+                }
+                playBeep();
+                setTimeout(playBeep, 400);
+                </script>
+                """
+                components.html(alarm_js, height=0)
+
+                # Send WhatsApp Alert if enabled
+                if enable_whatsapp_alert and whatsapp_phone and whatsapp_apikey:
+                    try:
+                        alert_msg = urllib.parse.quote(f"🚨 Scanner Alert! Found {len(triggered_events)} active setups. Check your dashboard.")
+                        wa_url = f"https://api.callmebot.com/whatsapp.php?phone={whatsapp_phone}&text={alert_msg}&apikey={whatsapp_apikey}"
+                        urllib.request.urlopen(wa_url, timeout=5)
+                    except Exception as wa_err:
+                        st.sidebar.warning(f"WhatsApp Alert failed: {wa_err}")
+
         except Exception as e:
             st.error(f"Error executing USDT futures scan: {e}")
 
