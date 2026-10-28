@@ -366,7 +366,7 @@ if 'run_scan' in locals() and run_scan:
             if not usdt_swap_symbols:
                 usdt_swap_symbols = [s for s in exchange.symbols if '/USDT' in s]
 
-            priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT', 'BLESS/USDT']
+            priority_coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ZEC/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT', 'AKE/USDT']
             
             raw_symbols = []
             for p in priority_coins:
@@ -443,65 +443,29 @@ if 'run_scan' in locals() and run_scan:
                     ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
                     
                     latest = df.iloc[-1]
-                    prev_c = df.iloc[-2]
                     rsi = latest['rsi']
                     price = latest['close']
                     
-                    # Strictly Filtered Candlestick Pattern & Breakout Detection
-                    curr_open = latest['open']
-                    curr_close = latest['close']
-                    curr_high = latest['high']
-                    curr_low = latest['low']
+                    # Objective Price Action / Bar State (Replaces unreliable guess patterns)
+                    open_p = latest['open']
+                    close_p = latest['close']
+                    high_p = latest['high']
+                    low_p = latest['low']
                     
-                    prev_open = prev_c['open']
-                    prev_close = prev_c['close']
+                    body_size = abs(close_p - open_p)
+                    total_bar_range = high_p - low_p
                     
-                    body = abs(curr_close - curr_open)
-                    total_range = curr_high - curr_low
-                    lower_wick = min(curr_open, curr_close) - curr_low
-                    upper_wick = curr_high - max(curr_open, curr_close)
-                    
-                    high_20 = df['high'].rolling(20).max().iloc[-2]
-                    low_20 = df['low'].rolling(20).min().iloc[-2]
-                    
-                    is_significant_candle = total_range > (price * 0.0005)
-                    
-                    # Pattern rules with strict impulse / breakout differentiation
-                    is_impulse_pump = is_significant_candle and (curr_close > curr_open) and (body >= total_range * 0.7) and (upper_wick < body * 0.3)
-                    is_impulse_dump = is_significant_candle and (curr_close < curr_open) and (body >= total_range * 0.7) and (lower_wick < body * 0.3)
-                    
-                    is_bullish_engulfing = is_significant_candle and (prev_close < prev_open) and (curr_close > curr_open) and (curr_close >= prev_open) and (curr_open <= prev_close) and (body >= total_range * 0.5)
-                    is_bearish_engulfing = is_significant_candle and (prev_close > prev_open) and (curr_close < curr_open) and (curr_close <= prev_open) and (curr_close >= prev_close) and (body >= total_range * 0.5)
-                    
-                    # True Hammer requires small body near top and long lower wick, EXCLUDING impulse pumps
-                    is_hammer = is_significant_candle and not is_impulse_pump and (lower_wick > (2.5 * body)) and (upper_wick < (body * 0.3)) and (body > total_range * 0.1)
-                    is_shooting_star = is_significant_candle and not is_impulse_dump and (upper_wick > (2.5 * body)) and (lower_wick < (body * 0.3)) and (body > total_range * 0.1)
-                    
-                    is_breakout_high = curr_close > high_20
-                    is_breakout_low = curr_close < low_20
-                    
-                    if is_impulse_pump:
-                        candle_signal = f"🚀 Impulse Pump @ ${price:.2f}"
-                    elif is_impulse_dump:
-                        candle_signal = f"💥 Impulse Dump @ ${price:.2f}"
-                    elif is_bullish_engulfing:
-                        candle_signal = f"🟢 Bullish Engulfing @ ${price:.2f}"
-                    elif is_bearish_engulfing:
-                        candle_signal = f"🔴 Bearish Engulfing @ ${price:.2f}"
-                    elif is_hammer:
-                        candle_signal = f"🔨 Bullish Hammer @ ${price:.2f}"
-                    elif is_shooting_star:
-                        candle_signal = f"🌠 Shooting Star @ ${price:.2f}"
-                    elif is_breakout_high:
-                        candle_signal = f"🚀 High Breakout @ ${price:.2f}"
-                    elif is_breakout_low:
-                        candle_signal = f"💥 Low Breakdown @ ${price:.2f}"
+                    if total_bar_range > 0 and (body_size / total_bar_range) > 0.6:
+                        if close_p > open_p:
+                            bar_state = f"🟢 Bullish Impulse @ ${price:.2f}"
+                        else:
+                            bar_state = f"🔴 Bearish Dump @ ${price:.2f}"
                     else:
-                        candle_signal = "Normal"
+                        bar_state = f"⚖️ Consolidation @ ${price:.2f}"
                     
-                    # Robust Whale Volume Spike Logic (Volume > 1.5x of 20-period volume MA)
+                    # Reliable Volume Spike Detection (> 1.6x of 20-period volume MA)
                     volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
-                    is_whale_spike = latest['volume'] > (volume_ma * 1.5) if not pd.isna(volume_ma) and volume_ma > 0 else False
+                    is_whale_spike = latest['volume'] > (volume_ma * 1.6) if not pd.isna(volume_ma) and volume_ma > 0 else False
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
@@ -540,7 +504,7 @@ if 'run_scan' in locals() and run_scan:
                             "Symbol": symbol,
                             "Direction": signal,
                             "Price": f"${price:.2f}",
-                            "Candle / Pattern": candle_signal,
+                            "Price Action": bar_state,
                             "Stop Loss": f"${sl:.2f}",
                             "TP1 (1.5R)": f"${tp1:.2f}",
                             "TP2 (2.5R)": f"${tp2:.2f}",
