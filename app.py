@@ -401,6 +401,10 @@ with st.expander(f"🐦 Live Twitter / X Intel Feed (Tracking @{twitter_handle})
 
 st.markdown("---")
 
+# Initialize Session State for Scanned Results
+if 'scan_results' not in st.session_state:
+    st.session_state.scan_results = []
+
 # Live Scan Execution Block
 if 'run_scan' in locals() and run_scan:
     with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
@@ -542,25 +546,35 @@ if 'run_scan' in locals() and run_scan:
                         elif c3_high < c1_low:
                             fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} - ${c1_low:.2f})"
 
-                    # Previous Fully Closed Daily Candle Status (using index -2 to look at the last locked candle)
+                    # Previous Fully Closed Daily Candle Status
                     prev_daily_status = "Neutral ⚪"
                     try:
                         d_candles = exchange.fetch_ohlcv(symbol, '1d', limit=3)
                         if d_candles and len(d_candles) >= 2:
-                            d_prev = d_candles[-2]  # Index -2 is the last fully completed/closed daily candle
+                            d_prev = d_candles[-2]
                             prev_daily_status = "Bullish 🟢" if d_prev[4] >= d_prev[1] else "Bearish 🔴"
                     except Exception:
                         pass
 
-                    # Previous Fully Closed Monthly Candle Status (using index -2)
+                    # Previous Fully Closed Monthly Candle Status
                     prev_monthly_status = "Neutral ⚪"
                     try:
                         m_candles = exchange.fetch_ohlcv(symbol, '1M', limit=3)
                         if m_candles and len(m_candles) >= 2:
-                            m_prev = m_candles[-2]  # Index -2 is the last fully completed/closed monthly candle
+                            m_prev = m_candles[-2]
                             prev_monthly_status = "Bullish 🟢" if m_prev[4] >= m_prev[1] else "Bearish 🔴"
                     except Exception:
                         pass
+
+                    # Calculate 2 Support Zones and 2 Resistance Zones
+                    recent_lows = df['low'].rolling(20).min().iloc[-1]
+                    recent_highs = df['high'].rolling(20).max().iloc[-1]
+                    current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else price * 0.01
+
+                    s1 = price - current_atr
+                    s2 = recent_lows if recent_lows < price else price - (current_atr * 2)
+                    r1 = price + current_atr
+                    r2 = recent_highs if recent_highs > price else price + (current_atr * 2)
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
@@ -604,6 +618,10 @@ if 'run_scan' in locals() and run_scan:
                             "Fair Value Gap": fvg_status,
                             "Prev Daily Close": prev_daily_status,
                             "Prev Monthly Close": prev_monthly_status,
+                            "Support 1": f"${s1:.2f}",
+                            "Support 2": f"${s2:.2f}",
+                            "Resistance 1": f"${r1:.2f}",
+                            "Resistance 2": f"${r2:.2f}",
                             "Stop Loss": f"${sl:.2f}",
                             "TP1 (1.5R)": f"${tp1:.2f}",
                             "TP2 (2.5R)": f"${tp2:.2f}",
@@ -618,24 +636,40 @@ if 'run_scan' in locals() and run_scan:
                     continue
             
             progress_bar.empty()
+            st.session_state.scan_results = matches
             
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Opportunities Found", len(matches))
-            col2.metric("Contracts Scanned", total_symbols)
-            col3.metric("Timeframe", selected_tf)
-            col4.metric("Margin Used", f"${investment:,.0f} USDT")
-            col5.metric("Leverage", f"{leverage}x")
-            
-            st.markdown("---")
-            
-            if matches:
-                st.success(f"Successfully identified {len(matches)} active USDT Perpetual Futures setups!")
-                st.dataframe(pd.DataFrame(matches), use_container_width=True)
-            else:
-                st.warning("No USDT futures contracts currently match extreme RSI & volume criteria on this timeframe.")
-                
         except Exception as e:
             st.error(f"Error executing USDT futures scan: {e}")
+
+# Display Results & Interactive Dropdown Selector Panel
+if st.session_state.scan_results:
+    st.markdown("---")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Opportunities Found", len(st.session_state.scan_results))
+    col2.metric("Timeframe", selected_tf)
+    col3.metric("Margin Used", f"${investment:,.0f} USDT")
+    col4.metric("Leverage", f"{leverage}x")
+    
+    st.success(f"Successfully identified {len(st.session_state.scan_results)} active USDT Perpetual Futures setups!")
+    st.dataframe(pd.DataFrame(st.session_state.scan_results), use_container_width=True)
+    
+    st.markdown("---")
+    st.subheader("🎯 Scanned Coin Analysis Dropdown & Zone Inspector")
+    
+    coin_symbols_list = [item["Symbol"] for item in st.session_state.scan_results]
+    selected_dropdown_coin = st.selectbox("Select Scanned Coin to Analyze", coin_symbols_list)
+    
+    selected_item = next((item for item in st.session_state.scan_results if item["Symbol"] == selected_dropdown_coin), None)
+    
+    if selected_item:
+        st.markdown(f"### Detailed Setup for **{selected_item['Symbol']}**")
+        d_col1, d_col2, d_col3, d_col4 = st.columns(4)
+        d_col1.metric("Signal Direction", selected_item["Direction"])
+        d_col2.metric("Entry Price", selected_item["Entry Price"])
+        d_col3.metric("Support 1 / Support 2", f"{selected_item['Support 1']} / {selected_item['Support 2']}")
+        d_col4.metric("Resistance 1 / Resistance 2", f"{selected_item['Resistance 1']} / {selected_item['Resistance 2']}")
+        
+        st.info(f"**Trader Advisory & Status:** {selected_item['Status']} | **Fair Value Gap:** {selected_item['Fair Value Gap']} | **RSI:** {selected_item['RSI']}")
 else:
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Opportunities Found", 0)
