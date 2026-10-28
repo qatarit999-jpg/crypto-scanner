@@ -266,7 +266,7 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
-# 🐋 Exchange Whale & Large-Block Volume Detector (CryptoQuant Style Ratio Implementation)
+# 🐋 Exchange Whale & Large-Block Volume Detector
 st.markdown("---")
 st.subheader("🐋 Exchange Whale & Large-Block Volume Detector")
 st.markdown("Calculates the ratio of top 10 largest inflow blocks versus total aggregate exchange inflows.")
@@ -299,22 +299,14 @@ if st.button("📊 Run Whale Flow & Top-10 Inflow Ratio Analysis"):
                 else:
                     target_w_sym = 'BTC/USDT'
             
-            # Pull candle data to simulate inflow volume transactions
             w_candles = ex_inst.fetch_ohlcv(target_w_sym, whale_tf, limit=100)
             df_w = pd.DataFrame(w_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df_w['Timestamp'] = pd.to_datetime(df_w['timestamp'], unit='ms')
             
-            # Step 1: Pull / Isolate Inflow Proxy Transactions (using volume chunks)
             inflows = df_w['volume'].values
-            
-            # Step 2: Sort and Isolate Top Transactions (Sum of top 10)
-            sorted_inflows = np.sort(inflows)[::-1]  # descending order
+            sorted_inflows = np.sort(inflows)[::-1]
             top_10_sum = np.sum(sorted_inflows[:10])
-            
-            # Step 3: Calculate Total Inflow Sum
             total_inflow_sum = np.sum(inflows)
-            
-            # Step 4: Compute Ratio (Top 10 sum divided by total sum)
             whale_ratio = (top_10_sum / total_inflow_sum) if total_inflow_sum > 0 else 0.0
             
             df_w['whale_ratio_index'] = df_w['volume'] / (total_inflow_sum / len(df_w) if len(df_w) > 0 else 1)
@@ -326,7 +318,6 @@ if st.button("📊 Run Whale Flow & Top-10 Inflow Ratio Analysis"):
             w_col2.metric("Top 10 Transactions Sum", f"{top_10_sum:,.2f}")
             w_col3.metric("Total Inflow Sum", f"{total_inflow_sum:,.2f}")
             
-            # Whale Ratio Trend Chart
             st.line_chart(df_w.set_index('Timestamp')[['whale_ratio_index']])
             
         except Exception as e:
@@ -513,6 +504,41 @@ if 'run_scan' in locals() and run_scan:
                             bar_state = f"🔴 Bearish Dump @ ${price:.2f}"
                     else:
                         bar_state = f"⚖️ Consolidation @ ${price:.2f}"
+
+                    # Fair Value Gap (FVG) Detection (Last 3 candles)
+                    fvg_status = "None ⚪"
+                    if len(df) >= 3:
+                        c1_high = df['high'].iloc[-3]
+                        c1_low = df['low'].iloc[-3]
+                        c3_low = df['low'].iloc[-1]
+                        c3_high = df['high'].iloc[-1]
+                        
+                        if c3_low > c1_high:
+                            fvg_status = f"🟢 Bullish FVG (${c1_high:.2f} - ${c3_low:.2f})"
+                        elif c3_high < c1_low:
+                            fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} - ${c1_low:.2f})"
+
+                    # Fetch Daily ('1d') candle status
+                    daily_close_status = "Neutral ⚪"
+                    try:
+                        d_candles = exchange.fetch_ohlcv(symbol, '1d', limit=2)
+                        if d_candles and len(d_candles) > 0:
+                            d_last = d_candles[-1]
+                            d_open, d_close = d_last[1], d_last[4]
+                            daily_close_status = "Bullish 🟢" if d_close >= d_open else "Bearish 🔴"
+                    except Exception:
+                        pass
+
+                    # Fetch Monthly ('1M') candle status
+                    monthly_close_status = "Neutral ⚪"
+                    try:
+                        m_candles = exchange.fetch_ohlcv(symbol, '1M', limit=2)
+                        if m_candles and len(m_candles) > 0:
+                            m_last = m_candles[-1]
+                            m_open, m_close = m_last[1], m_last[4]
+                            monthly_close_status = "Bullish 🟢" if m_close >= m_open else "Bearish 🔴"
+                    except Exception:
+                        pass
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
@@ -543,6 +569,9 @@ if 'run_scan' in locals() and run_scan:
                             "Direction": signal,
                             "Price": f"${price:.2f}",
                             "Price Action": bar_state,
+                            "Fair Value Gap": fvg_status,
+                            "Daily Close": daily_close_status,
+                            "Monthly Close": monthly_close_status,
                             "Stop Loss": f"${sl:.2f}",
                             "TP1 (1.5R)": f"${tp1:.2f}",
                             "TP2 (2.5R)": f"${tp2:.2f}",
