@@ -567,7 +567,7 @@ if 'run_scan' in locals() and run_scan:
                     except Exception:
                         pass
 
-                    # Calculate 2 Support Zones and 2 Resistance Zones (TradingView Aligned)
+                    # Calculate 2 Support Zones and 2 Resistance Zones (TradingView Aligned Pivot/ATR)
                     recent_lows = df['low'].rolling(20).min().iloc[-1]
                     recent_highs = df['high'].rolling(20).max().iloc[-1]
                     current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else price * 0.01
@@ -577,11 +577,11 @@ if 'run_scan' in locals() and run_scan:
                     r1 = price + current_atr
                     r2 = recent_highs if recent_highs > price else price + (current_atr * 2)
 
-                    # Precise Proximity Reversal & Bearish Trigger Marking
+                    # Expanded Proximity Reversal & Bearish Trigger Marking (Threshold set to 2.5% for active detection)
                     zone_status = "Normal Range ⚪"
-                    if abs(price - s1) / price <= 0.008 or abs(price - s2) / price <= 0.008:
+                    if abs(price - s1) / price <= 0.025 or abs(price - s2) / price <= 0.025:
                         zone_status = "🟢 Bullish Reversal Bounce Triggered near Support"
-                    elif abs(price - r1) / price <= 0.008 or abs(price - r2) / price <= 0.008:
+                    elif abs(price - r1) / price <= 0.025 or abs(price - r2) / price <= 0.025:
                         zone_status = "🔴 Bearish Rejection Risk / Resistance Triggered"
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
