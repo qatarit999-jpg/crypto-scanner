@@ -283,7 +283,7 @@ with calc_col4:
 
 total_position_size = calc_margin * calc_lev
 potential_profit_usdt = total_position_size * (calc_target_pct / 100.0)
-max_loss_usdt = calc_margin  # Max loss capped at margin for cross/isolated without liquidation buffer
+max_loss_usdt = calc_margin
 
 pnl_col1, pnl_col2, pnl_col3 = st.columns(3)
 pnl_col1.metric("Total Position Notional", f"${total_position_size:,.2f} USDT")
@@ -542,23 +542,23 @@ if 'run_scan' in locals() and run_scan:
                         elif c3_high < c1_low:
                             fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} - ${c1_low:.2f})"
 
-                    # Daily Candle Status
-                    daily_close_status = "Neutral ⚪"
+                    # Previous Fully Closed Daily Candle Status (using index -2 to look at the last locked candle)
+                    prev_daily_status = "Neutral ⚪"
                     try:
-                        d_candles = exchange.fetch_ohlcv(symbol, '1d', limit=2)
-                        if d_candles and len(d_candles) > 0:
-                            d_last = d_candles[-1]
-                            daily_close_status = "Bullish 🟢" if d_last[4] >= d_last[1] else "Bearish 🔴"
+                        d_candles = exchange.fetch_ohlcv(symbol, '1d', limit=3)
+                        if d_candles and len(d_candles) >= 2:
+                            d_prev = d_candles[-2]  # Index -2 is the last fully completed/closed daily candle
+                            prev_daily_status = "Bullish 🟢" if d_prev[4] >= d_prev[1] else "Bearish 🔴"
                     except Exception:
                         pass
 
-                    # Monthly Candle Status
-                    monthly_close_status = "Neutral ⚪"
+                    # Previous Fully Closed Monthly Candle Status (using index -2)
+                    prev_monthly_status = "Neutral ⚪"
                     try:
-                        m_candles = exchange.fetch_ohlcv(symbol, '1M', limit=2)
-                        if m_candles and len(m_candles) > 0:
-                            m_last = m_candles[-1]
-                            monthly_close_status = "Bullish 🟢" if m_last[4] >= m_last[1] else "Bearish 🔴"
+                        m_candles = exchange.fetch_ohlcv(symbol, '1M', limit=3)
+                        if m_candles and len(m_candles) >= 2:
+                            m_prev = m_candles[-2]  # Index -2 is the last fully completed/closed monthly candle
+                            prev_monthly_status = "Bullish 🟢" if m_prev[4] >= m_prev[1] else "Bearish 🔴"
                     except Exception:
                         pass
                     
@@ -568,15 +568,14 @@ if 'run_scan' in locals() and run_scan:
                     if rsi < 35 or rsi > 65:
                         signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
                         
-                        # Optimal Entry Price Calculation (pullback to recent support/resistance or current market price)
                         if signal.startswith("LONG"):
-                            entry_price = price * 0.995  # Optimized limit entry slightly below current market
+                            entry_price = price * 0.995
                             sl = price * 0.980
                             tp1 = price * 1.020
                             tp2 = price * 1.040
                             tp3 = price * 1.060
                         else:
-                            entry_price = price * 1.005  # Optimized limit entry slightly above current market
+                            entry_price = price * 1.005
                             sl = price * 1.020
                             tp1 = price * 0.980
                             tp2 = price * 0.960
@@ -603,8 +602,8 @@ if 'run_scan' in locals() and run_scan:
                             "Entry Price": f"${entry_price:.2f}",
                             "Price Action": bar_state,
                             "Fair Value Gap": fvg_status,
-                            "Daily Close": daily_close_status,
-                            "Monthly Close": monthly_close_status,
+                            "Prev Daily Close": prev_daily_status,
+                            "Prev Monthly Close": prev_monthly_status,
                             "Stop Loss": f"${sl:.2f}",
                             "TP1 (1.5R)": f"${tp1:.2f}",
                             "TP2 (2.5R)": f"${tp2:.2f}",
