@@ -543,9 +543,9 @@ if 'run_scan' in locals() and run_scan:
                         c3_high = df['high'].iloc[-1]
                         
                         if c3_low > c1_high:
-                            fvg_status = f"🟢 Bullish FVG (${c1_high:.2f} -${c3_low:.2f})"
+                            fvg_status = f"🟢 Bullish FVG (${c1_high:.2f} - ${c3_low:.2f})"
                         elif c3_high < c1_low:
-                            fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} -${c1_low:.2f})"
+                            fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} - ${c1_low:.2f})"
 
                     # Previous Fully Closed Daily Candle Status
                     prev_daily_status = "Neutral ⚪"
@@ -686,10 +686,41 @@ if st.session_state.scan_results:
         tv_exchange = selected_exchange_name.upper()
         tv_symbol_str = f"{tv_exchange}:{base_clean}USDT"
         
-        # Official TradingView Advanced Real-Time Chart Widget HTML embed
+        # Official TradingView Advanced Real-Time Chart Widget HTML embed with properly escaped JS curly braces
         tv_html = f"""
         <div class="tradingview-widget-container" style="height:550px;width:100%">
           <div id="tradingview_chart" style="height:550px;width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
-          new
+          new TradingView.widget(
+          {{
+            "width": "100%",
+            "height": 550,
+            "symbol": "{tv_symbol_str}",
+            "interval": "D",
+            "timezone": "Etc/UTC",
+            "theme": "dark",
+            "style": "1",
+            "locale": "en",
+            "toolbar_bg": "#f1f3f6",
+            "enable_publishing": false,
+            "allow_symbol_change": true,
+            "details": true,
+            "hotlist": true,
+            "calendar": true,
+            "support_host": "https://www.tradingview.com"
+          }});
+          </script>
+        </div>
+        """
+        components.html(tv_html, height=560)
+else:
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Opportunities Found", 0)
+    col2.metric("Contracts Scanned", 40)
+    col3.metric("Timeframe", "5m")
+    col4.metric("Margin Used", "$40 USDT")
+    col5.metric("Leverage", "65x")
+    
+    st.markdown("---")
+    st.info("👈 Register or login via the sidebar, configure your parameters, and click **'Run Live USDT Futures Scan'** to start.")
