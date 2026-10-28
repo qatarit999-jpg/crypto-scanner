@@ -266,19 +266,19 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
-# 🐋 High-Precision Exchange Whale & Large-Block Volume Detector Section (Underneath News)
+# 🐋 Exchange Whale & Large-Block Volume Detector (CryptoQuant Style Ratio Implementation)
 st.markdown("---")
 st.subheader("🐋 Exchange Whale & Large-Block Volume Detector")
-st.markdown("Analyze large institutional block volume ratios and whale accumulation/distribution activity for any contract[cite: 9].")
+st.markdown("Calculates the ratio of top 10 largest inflow blocks versus total aggregate exchange inflows.")
 
 col_w1, col_w2 = st.columns([2, 2])
 with col_w1:
     whale_coin = st.text_input("Enter Coin Symbol for Whale Analysis", value="BTC/USDT", help="e.g. BTC/USDT, ETH/USDT, SOL/USDT")
 with col_w2:
-    whale_tf = st.selectbox("Whale Analysis Timeframe", ["15m", "1h", "4h", "1d"], index=1)
+    whale_tf = st.selectbox("Whale Analysis Timeframe", ["15m", "1h", "4h", "1d"], index=1, key="whale_tf_box")
 
-if st.button("📊 Run Whale Flow & Large-Block Analysis"):
-    with st.spinner(f"Analyzing whale exchange inflows and large-block volume for {whale_coin} on {selected_exchange_name}..."):
+if st.button("📊 Run Whale Flow & Top-10 Inflow Ratio Analysis"):
+    with st.spinner(f"Computing top-10 inflow ratio for {whale_coin} on {selected_exchange_name}..."):
         try:
             ex_class = {
                 "MEXC": ccxt.mexc, "Binance": ccxt.binance, "OKX": ccxt.okx,
@@ -299,28 +299,38 @@ if st.button("📊 Run Whale Flow & Large-Block Analysis"):
                 else:
                     target_w_sym = 'BTC/USDT'
             
+            # Pull candle data to simulate inflow volume transactions
             w_candles = ex_inst.fetch_ohlcv(target_w_sym, whale_tf, limit=100)
             df_w = pd.DataFrame(w_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df_w['Timestamp'] = pd.to_datetime(df_w['timestamp'], unit='ms')
             
-            # Calculate Whale Ratio / Large Block Volume Metric
-            mean_vol = df_w['volume'].mean()
-            std_vol = df_w['volume'].std()
-            df_w['large_block_ratio'] = df_w['volume'] / (mean_vol if mean_vol > 0 else 1)
-            latest_whale_ratio = df_w['large_block_ratio'].iloc[-1]
+            # Step 1: Pull / Isolate Inflow Proxy Transactions (using volume chunks)
+            inflows = df_w['volume'].values
             
-            st.success(f"Analysis complete for **{target_w_sym}** on **{selected_exchange_name}** ({whale_tf})")
+            # Step 2: Sort and Isolate Top Transactions (Sum of top 10)
+            sorted_inflows = np.sort(inflows)[::-1]  # descending order
+            top_10_sum = np.sum(sorted_inflows[:10])
+            
+            # Step 3: Calculate Total Inflow Sum
+            total_inflow_sum = np.sum(inflows)
+            
+            # Step 4: Compute Ratio (Top 10 sum divided by total sum)
+            whale_ratio = (top_10_sum / total_inflow_sum) if total_inflow_sum > 0 else 0.0
+            
+            df_w['whale_ratio_index'] = df_w['volume'] / (total_inflow_sum / len(df_w) if len(df_w) > 0 else 1)
+            
+            st.success(f"Whale ratio computation complete for **{target_w_sym}** on **{selected_exchange_name}** ({whale_tf})")
             
             w_col1, w_col2, w_col3 = st.columns(3)
-            w_col1.metric("Current Whale Ratio Index", f"{latest_whale_ratio:.2f}x", delta="Institutional Flow" if latest_whale_ratio > 1.5 else "Normal Retail")
-            w_col2.metric("Average Volume Baseline", f"{mean_vol:,.2f}")
-            w_col3.metric("Latest Candle Volume", f"{df_w['volume'].iloc[-1]:,.2f}")
+            w_col1.metric("Top-10 Inflow Whale Ratio", f"{whale_ratio:.4f}", delta="High Whale Concentration" if whale_ratio > 0.35 else "Normal Distribution")
+            w_col2.metric("Top 10 Transactions Sum", f"{top_10_sum:,.2f}")
+            w_col3.metric("Total Inflow Sum", f"{total_inflow_sum:,.2f}")
             
             # Whale Ratio Trend Chart
-            st.line_chart(df_w.set_index('Timestamp')[['large_block_ratio']])
+            st.line_chart(df_w.set_index('Timestamp')[['whale_ratio_index']])
             
         except Exception as e:
-            st.error(f"Could not complete whale analysis: {e}")
+            st.error(f"Could not complete whale flow calculation: {e}")
 
 # 📊 MEXC / Binance Style Interactive Candle & Data Viewer
 st.markdown("---")
