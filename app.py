@@ -448,7 +448,7 @@ if 'run_scan' in locals() and run_scan:
                     rsi = latest['rsi']
                     price = latest['close']
                     
-                    # Expanded Major Candlestick Patterns & Breakout Detection
+                    # Strictly Filtered Candlestick Pattern & Breakout Detection
                     curr_open = latest['open']
                     curr_close = latest['close']
                     curr_high = latest['high']
@@ -465,13 +465,13 @@ if 'run_scan' in locals() and run_scan:
                     high_20 = df['high'].rolling(20).max().iloc[-2]
                     low_20 = df['low'].rolling(20).min().iloc[-2]
                     
-                    # Pattern Definitions
-                    is_bullish_engulfing = (prev_close < prev_open) and (curr_close > curr_open) and (curr_close >= prev_open) and (curr_open <= prev_close)
-                    is_bearish_engulfing = (prev_close > prev_open) and (curr_close < curr_open) and (curr_close <= prev_open) and (curr_close >= prev_close)
-                    is_hammer = (lower_wick > (2 * body)) and (upper_wick < (body * 0.5)) and (total_range > 0)
-                    is_shooting_star = (upper_wick > (2 * body)) and (lower_wick < (body * 0.5)) and (total_range > 0)
-                    is_morning_star = (prev_2c['close'] < prev_2c['open']) and (abs(prev_close - prev_open) < (prev_2c['high'] - prev_2c['low']) * 0.3) and (curr_close > curr_open) and (curr_close > (prev_2c['open'] + prev_2c['close']) / 2)
-                    is_evening_star = (prev_2c['close'] > prev_2c['open']) and (abs(prev_close - prev_open) < (prev_2c['high'] - prev_2c['low']) * 0.3) and (curr_close < curr_open) and (curr_close < (prev_2c['open'] + prev_2c['close']) / 2)
+                    # Require meaningful candle size to avoid false minor-tick triggers
+                    is_significant_candle = total_range > (price * 0.0005)
+                    
+                    is_bullish_engulfing = is_significant_candle and (prev_close < prev_open) and (curr_close > curr_open) and (curr_close >= prev_open) and (curr_open <= prev_close) and (body >= total_range * 0.5)
+                    is_bearish_engulfing = is_significant_candle and (prev_close > prev_open) and (curr_close < curr_open) and (curr_close <= prev_open) and (curr_close >= prev_close) and (body >= total_range * 0.5)
+                    is_hammer = is_significant_candle and (lower_wick > (2 * body)) and (upper_wick < (body * 0.4)) and (body > total_range * 0.15)
+                    is_shooting_star = is_significant_candle and (upper_wick > (2 * body)) and (lower_wick < (body * 0.4)) and (body > total_range * 0.15)
                     is_breakout_high = curr_close > high_20
                     is_breakout_low = curr_close < low_20
                     
@@ -483,20 +483,16 @@ if 'run_scan' in locals() and run_scan:
                         candle_signal = f"🔨 Bullish Hammer @ ${price:.2f}"
                     elif is_shooting_star:
                         candle_signal = f"🌠 Shooting Star @ ${price:.2f}"
-                    elif is_morning_star:
-                        candle_signal = f"🌅 Morning Star @ ${price:.2f}"
-                    elif is_evening_star:
-                        candle_signal = f"🌆 Evening Star @ ${price:.2f}"
                     elif is_breakout_high:
                         candle_signal = f"🚀 High Breakout @ ${price:.2f}"
                     elif is_breakout_low:
                         candle_signal = f"💥 Low Breakdown @ ${price:.2f}"
                     else:
-                        candle_signal = f"Normal @ ${price:.2f}"
+                        candle_signal = "Normal"
                     
-                    # Fixed Whale Volume Spike Logic (> 2.5x of 20-period volume MA)
+                    # Corrected & Sensitive Whale Volume Spike Logic (> 1.8x of 20-period volume MA)
                     volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
-                    is_whale_spike = latest['volume'] > (volume_ma * 2.5) if not pd.isna(volume_ma) and volume_ma > 0 else False
+                    is_whale_spike = latest['volume'] > (volume_ma * 1.8) if not pd.isna(volume_ma) and volume_ma > 0 else False
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
