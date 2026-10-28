@@ -567,7 +567,7 @@ if 'run_scan' in locals() and run_scan:
                     except Exception:
                         pass
 
-                    # Calculate Support and Resistance Zones
+                    # Calculate 2 Support Zones and 2 Resistance Zones (TradingView Aligned)
                     recent_lows = df['low'].rolling(20).min().iloc[-1]
                     recent_highs = df['high'].rolling(20).max().iloc[-1]
                     current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else price * 0.01
@@ -577,12 +577,12 @@ if 'run_scan' in locals() and run_scan:
                     r1 = price + current_atr
                     r2 = recent_highs if recent_highs > price else price + (current_atr * 2)
 
-                    # Proximity Reversal / Bearish Zone Marking
+                    # Precise Proximity Reversal & Bearish Trigger Marking
                     zone_status = "Normal Range ⚪"
                     if abs(price - s1) / price <= 0.008 or abs(price - s2) / price <= 0.008:
-                        zone_status = "🟢 Near Support / Potential Reversal Bounce"
+                        zone_status = "🟢 Bullish Reversal Bounce Triggered near Support"
                     elif abs(price - r1) / price <= 0.008 or abs(price - r2) / price <= 0.008:
-                        zone_status = "🔴 Near Resistance / Bearish Rejection Risk"
+                        zone_status = "🔴 Bearish Rejection Risk / Resistance Triggered"
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
@@ -673,11 +673,15 @@ if st.session_state.scan_results:
     
     if selected_item:
         st.markdown(f"### Detailed Setup for **{selected_item['Symbol']}**")
-        d_col1, d_col2, d_col3, d_col4 = st.columns(4)
-        d_col1.metric("Signal Direction", selected_item["Direction"])
-        d_col2.metric("Entry Price", selected_item["Entry Price"])
-        d_col3.metric("Zone Status", selected_item.get("Zone Status", "Normal Range ⚪"))
-        d_col4.metric("Support / Resistance", f"S1: {selected_item['Support 1']} | R1: {selected_item['Resistance 1']}")
+        
+        # Clean vertical text blocks to prevent any text truncation or cutoff
+        st.markdown(f"""
+        - **Signal Direction:** {selected_item['Direction']}
+        - **Entry Price:** {selected_item['Entry Price']}
+        - **Zone Status (Proximity Trigger):** {selected_item.get('Zone Status', 'Normal Range ⚪')}
+        - **Support Zones:** S1: {selected_item['Support 1']} | S2: {selected_item['Support 2']}
+        - **Resistance Zones:** R1: {selected_item['Resistance 1']} | R2: {selected_item['Resistance 2']}
+        """)
         
         st.info(f"**Trader Advisory & Status:** {selected_item['Status']} | **Fair Value Gap:** {selected_item['Fair Value Gap']} | **RSI:** {selected_item['RSI']}")
         
