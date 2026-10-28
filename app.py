@@ -266,6 +266,62 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
+# 🐋 High-Precision Exchange Whale & Large-Block Volume Detector Section (Underneath News)
+st.markdown("---")
+st.subheader("🐋 Exchange Whale & Large-Block Volume Detector")
+st.markdown("Analyze large institutional block volume ratios and whale accumulation/distribution activity for any contract[cite: 9].")
+
+col_w1, col_w2 = st.columns([2, 2])
+with col_w1:
+    whale_coin = st.text_input("Enter Coin Symbol for Whale Analysis", value="BTC/USDT", help="e.g. BTC/USDT, ETH/USDT, SOL/USDT")
+with col_w2:
+    whale_tf = st.selectbox("Whale Analysis Timeframe", ["15m", "1h", "4h", "1d"], index=1)
+
+if st.button("📊 Run Whale Flow & Large-Block Analysis"):
+    with st.spinner(f"Analyzing whale exchange inflows and large-block volume for {whale_coin} on {selected_exchange_name}..."):
+        try:
+            ex_class = {
+                "MEXC": ccxt.mexc, "Binance": ccxt.binance, "OKX": ccxt.okx,
+                "Bybit": ccxt.bybit, "Bitget": ccxt.bitget, "Gate.io": ccxt.gate, "KuCoin": ccxt.kucoin
+            }.get(selected_exchange_name, ccxt.mexc)
+            
+            ex_inst = ex_class({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+            ex_inst.load_markets()
+            
+            target_w_sym = whale_coin.upper().strip()
+            if not target_w_sym.endswith('/USDT'):
+                target_w_sym += '/USDT'
+                
+            if target_w_sym not in ex_inst.symbols:
+                matching_w = [s for s in ex_inst.symbols if target_w_sym.split('/')[0] in s and 'USDT' in s]
+                if matching_w:
+                    target_w_sym = matching_w[0]
+                else:
+                    target_w_sym = 'BTC/USDT'
+            
+            w_candles = ex_inst.fetch_ohlcv(target_w_sym, whale_tf, limit=100)
+            df_w = pd.DataFrame(w_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df_w['Timestamp'] = pd.to_datetime(df_w['timestamp'], unit='ms')
+            
+            # Calculate Whale Ratio / Large Block Volume Metric
+            mean_vol = df_w['volume'].mean()
+            std_vol = df_w['volume'].std()
+            df_w['large_block_ratio'] = df_w['volume'] / (mean_vol if mean_vol > 0 else 1)
+            latest_whale_ratio = df_w['large_block_ratio'].iloc[-1]
+            
+            st.success(f"Analysis complete for **{target_w_sym}** on **{selected_exchange_name}** ({whale_tf})")
+            
+            w_col1, w_col2, w_col3 = st.columns(3)
+            w_col1.metric("Current Whale Ratio Index", f"{latest_whale_ratio:.2f}x", delta="Institutional Flow" if latest_whale_ratio > 1.5 else "Normal Retail")
+            w_col2.metric("Average Volume Baseline", f"{mean_vol:,.2f}")
+            w_col3.metric("Latest Candle Volume", f"{df_w['volume'].iloc[-1]:,.2f}")
+            
+            # Whale Ratio Trend Chart
+            st.line_chart(df_w.set_index('Timestamp')[['large_block_ratio']])
+            
+        except Exception as e:
+            st.error(f"Could not complete whale analysis: {e}")
+
 # 📊 MEXC / Binance Style Interactive Candle & Data Viewer
 st.markdown("---")
 st.subheader("📊 Live Exchange Candle & Market Data Viewer (MEXC / Binance Style)")
@@ -448,17 +504,6 @@ if 'run_scan' in locals() and run_scan:
                     else:
                         bar_state = f"⚖️ Consolidation @ ${price:.2f}"
                     
-                    # Enhanced Whale Volume / Large Block Ratio Anomaly Detection
-                    # Calculates volume spike ratio relative to a 30-period rolling baseline
-                    vol_ma = df['volume'].rolling(window=30).mean().iloc[-1]
-                    vol_std = df['volume'].rolling(window=30).std().iloc[-1]
-                    
-                    if not pd.isna(vol_ma) and not pd.isna(vol_std) and vol_std > 0:
-                        z_score = (latest['volume'] - vol_ma) / vol_std
-                        is_whale_spike = z_score > 1.5 or latest['volume'] > (vol_ma * 2.2)
-                    else:
-                        is_whale_spike = latest['volume'] > (vol_ma * 2.2) if not pd.isna(vol_ma) else False
-                    
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
                     
@@ -494,7 +539,6 @@ if 'run_scan' in locals() and run_scan:
                             "TP3 (4.0R)": f"${tp3:.2f}",
                             "RSI": f"{rsi:.1f}",
                             "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Whale Spike 🟢" if is_whale_spike else "Normal ⚪",
                             "UT Bot": ut_status,
                             "Risk ($USDT)": f"-${dollar_risk:.2f}",
                             "Status": advice
