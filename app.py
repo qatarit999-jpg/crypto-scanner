@@ -2,6 +2,7 @@ import streamlit as st
 import ccxt
 import pandas as pd
 import numpy as np
+import streamlit.components.v1 as components
 import urllib.request
 import xml.etree.ElementTree as ET
 import json
@@ -542,9 +543,9 @@ if 'run_scan' in locals() and run_scan:
                         c3_high = df['high'].iloc[-1]
                         
                         if c3_low > c1_high:
-                            fvg_status = f"🟢 Bullish FVG (${c1_high:.2f} - ${c3_low:.2f})"
+                            fvg_status = f"🟢 Bullish FVG (${c1_high:.2f} -${c3_low:.2f})"
                         elif c3_high < c1_low:
-                            fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} - ${c1_low:.2f})"
+                            fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} -${c1_low:.2f})"
 
                     # Previous Fully Closed Daily Candle Status
                     prev_daily_status = "Neutral ⚪"
@@ -566,7 +567,7 @@ if 'run_scan' in locals() and run_scan:
                     except Exception:
                         pass
 
-                    # Calculate 2 Support Zones and 2 Resistance Zones
+                    # Calculate Support and Resistance Zones
                     recent_lows = df['low'].rolling(20).min().iloc[-1]
                     recent_highs = df['high'].rolling(20).max().iloc[-1]
                     current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else price * 0.01
@@ -575,6 +576,13 @@ if 'run_scan' in locals() and run_scan:
                     s2 = recent_lows if recent_lows < price else price - (current_atr * 2)
                     r1 = price + current_atr
                     r2 = recent_highs if recent_highs > price else price + (current_atr * 2)
+
+                    # Proximity Reversal / Bearish Zone Marking
+                    zone_status = "Normal Range ⚪"
+                    if abs(price - s1) / price <= 0.008 or abs(price - s2) / price <= 0.008:
+                        zone_status = "🟢 Near Support / Potential Reversal Bounce"
+                    elif abs(price - r1) / price <= 0.008 or abs(price - r2) / price <= 0.008:
+                        zone_status = "🔴 Near Resistance / Bearish Rejection Risk"
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
@@ -618,6 +626,7 @@ if 'run_scan' in locals() and run_scan:
                             "Fair Value Gap": fvg_status,
                             "Prev Daily Close": prev_daily_status,
                             "Prev Monthly Close": prev_monthly_status,
+                            "Zone Status": zone_status,
                             "Support 1": f"${s1:.2f}",
                             "Support 2": f"${s2:.2f}",
                             "Resistance 1": f"${r1:.2f}",
@@ -641,7 +650,7 @@ if 'run_scan' in locals() and run_scan:
         except Exception as e:
             st.error(f"Error executing USDT futures scan: {e}")
 
-# Display Results & Interactive Dropdown Selector Panel
+# Display Results & Interactive Dropdown Selector Panel with Official TradingView Chart
 if st.session_state.scan_results:
     st.markdown("---")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -650,11 +659,12 @@ if st.session_state.scan_results:
     col3.metric("Margin Used", f"${investment:,.0f} USDT")
     col4.metric("Leverage", f"{leverage}x")
     
+    display_table_data = [{k: v for k, v in item.items()} for item in st.session_state.scan_results]
     st.success(f"Successfully identified {len(st.session_state.scan_results)} active USDT Perpetual Futures setups!")
-    st.dataframe(pd.DataFrame(st.session_state.scan_results), use_container_width=True)
+    st.dataframe(pd.DataFrame(display_table_data), use_container_width=True)
     
     st.markdown("---")
-    st.subheader("🎯 Scanned Coin Analysis Dropdown & Zone Inspector")
+    st.subheader("🎯 Scanned Coin Analysis Dropdown & Official TradingView Chart")
     
     coin_symbols_list = [item["Symbol"] for item in st.session_state.scan_results]
     selected_dropdown_coin = st.selectbox("Select Scanned Coin to Analyze", coin_symbols_list)
@@ -666,17 +676,20 @@ if st.session_state.scan_results:
         d_col1, d_col2, d_col3, d_col4 = st.columns(4)
         d_col1.metric("Signal Direction", selected_item["Direction"])
         d_col2.metric("Entry Price", selected_item["Entry Price"])
-        d_col3.metric("Support 1 / Support 2", f"{selected_item['Support 1']} / {selected_item['Support 2']}")
-        d_col4.metric("Resistance 1 / Resistance 2", f"{selected_item['Resistance 1']} / {selected_item['Resistance 2']}")
+        d_col3.metric("Zone Status", selected_item["Zone Status"])
+        d_col4.metric("Support / Resistance", f"S1: {selected_item['Support 1']} | R1: {selected_item['Resistance 1']}")
         
         st.info(f"**Trader Advisory & Status:** {selected_item['Status']} | **Fair Value Gap:** {selected_item['Fair Value Gap']} | **RSI:** {selected_item['RSI']}")
-else:
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Opportunities Found", 0)
-    col2.metric("Contracts Scanned", 40)
-    col3.metric("Timeframe", "5m")
-    col4.metric("Margin Used", "$40 USDT")
-    col5.metric("Leverage", "65x")
-    
-    st.markdown("---")
-    st.info("👈 Register or login via the sidebar, configure your parameters, and click **'Run Live USDT Futures Scan'** to start.")
+        
+        # Format Symbol for TradingView Embed (e.g., BINANCE:BTCUSDT or MEXC:BTCUSDT)
+        base_clean = selected_item['Symbol'].split('/')[0].upper()
+        tv_exchange = selected_exchange_name.upper()
+        tv_symbol_str = f"{tv_exchange}:{base_clean}USDT"
+        
+        # Official TradingView Advanced Real-Time Chart Widget HTML embed
+        tv_html = f"""
+        <div class="tradingview-widget-container" style="height:550px;width:100%">
+          <div id="tradingview_chart" style="height:550px;width:100%"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+          <script type="text/javascript">
+          new
