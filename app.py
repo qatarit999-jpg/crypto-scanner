@@ -305,7 +305,6 @@ if st.button("🔍 Load Live Candle Data & Chart"):
                 target_sym += '/USDT'
                 
             if target_sym not in ex_inst.symbols:
-                # Try finding matching symbol
                 matching = [s for s in ex_inst.symbols if target_sym.split('/')[0] in s and 'USDT' in s]
                 if matching:
                     target_sym = matching[0]
@@ -318,11 +317,9 @@ if st.button("🔍 Load Live Candle Data & Chart"):
             
             st.success(f"Successfully loaded live data for **{target_sym}** on **{selected_exchange_name}** ({viewer_tf})")
             
-            # Interactive Price Chart
             chart_data = df_viewer.set_index('Timestamp')[['close', 'open', 'high', 'low']]
             st.line_chart(chart_data)
             
-            # Raw Candle Table Data
             st.markdown("##### 📋 Recent Candle OHLCV Feed")
             st.dataframe(df_viewer[['Timestamp', 'open', 'high', 'low', 'close', 'volume']].sort_values(by='Timestamp', ascending=False), use_container_width=True)
             
@@ -447,27 +444,49 @@ if 'run_scan' in locals() and run_scan:
                     
                     latest = df.iloc[-1]
                     prev_c = df.iloc[-2]
+                    prev_2c = df.iloc[-3]
                     rsi = latest['rsi']
                     price = latest['close']
                     
-                    # Candlestick Pattern & Breakout Detection with Price
+                    # Expanded Major Candlestick Patterns & Breakout Detection
                     curr_open = latest['open']
                     curr_close = latest['close']
+                    curr_high = latest['high']
+                    curr_low = latest['low']
+                    
                     prev_open = prev_c['open']
                     prev_close = prev_c['close']
+                    
+                    body = abs(curr_close - curr_open)
+                    total_range = curr_high - curr_low
+                    lower_wick = min(curr_open, curr_close) - curr_low
+                    upper_wick = curr_high - max(curr_open, curr_close)
                     
                     high_20 = df['high'].rolling(20).max().iloc[-2]
                     low_20 = df['low'].rolling(20).min().iloc[-2]
                     
+                    # Pattern Definitions
                     is_bullish_engulfing = (prev_close < prev_open) and (curr_close > curr_open) and (curr_close >= prev_open) and (curr_open <= prev_close)
                     is_bearish_engulfing = (prev_close > prev_open) and (curr_close < curr_open) and (curr_close <= prev_open) and (curr_close >= prev_close)
+                    is_hammer = (lower_wick > (2 * body)) and (upper_wick < (body * 0.5)) and (total_range > 0)
+                    is_shooting_star = (upper_wick > (2 * body)) and (lower_wick < (body * 0.5)) and (total_range > 0)
+                    is_morning_star = (prev_2c['close'] < prev_2c['open']) and (abs(prev_close - prev_open) < (prev_2c['high'] - prev_2c['low']) * 0.3) and (curr_close > curr_open) and (curr_close > (prev_2c['open'] + prev_2c['close']) / 2)
+                    is_evening_star = (prev_2c['close'] > prev_2c['open']) and (abs(prev_close - prev_open) < (prev_2c['high'] - prev_2c['low']) * 0.3) and (curr_close < curr_open) and (curr_close < (prev_2c['open'] + prev_2c['close']) / 2)
                     is_breakout_high = curr_close > high_20
                     is_breakout_low = curr_close < low_20
                     
                     if is_bullish_engulfing:
-                        candle_signal = f"🟢 Bulling Engulf @ ${price:.2f}"
+                        candle_signal = f"🟢 Bullish Engulfing @ ${price:.2f}"
                     elif is_bearish_engulfing:
-                        candle_signal = f"🔴 Bearish Engulf @ ${price:.2f}"
+                        candle_signal = f"🔴 Bearish Engulfing @ ${price:.2f}"
+                    elif is_hammer:
+                        candle_signal = f"🔨 Bullish Hammer @ ${price:.2f}"
+                    elif is_shooting_star:
+                        candle_signal = f"🌠 Shooting Star @ ${price:.2f}"
+                    elif is_morning_star:
+                        candle_signal = f"🌅 Morning Star @ ${price:.2f}"
+                    elif is_evening_star:
+                        candle_signal = f"🌆 Evening Star @ ${price:.2f}"
                     elif is_breakout_high:
                         candle_signal = f"🚀 High Breakout @ ${price:.2f}"
                     elif is_breakout_low:
@@ -475,8 +494,9 @@ if 'run_scan' in locals() and run_scan:
                     else:
                         candle_signal = f"Normal @ ${price:.2f}"
                     
+                    # Fixed Whale Volume Spike Logic (> 2.5x of 20-period volume MA)
                     volume_ma = df['volume'].rolling(window=20).mean().iloc[-1]
-                    is_whale_spike = latest['volume'] > (volume_ma * 3.5) if not pd.isna(volume_ma) else False
+                    is_whale_spike = latest['volume'] > (volume_ma * 2.5) if not pd.isna(volume_ma) and volume_ma > 0 else False
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
                     is_ut_buy = ut_status.startswith("BUY")
@@ -522,7 +542,7 @@ if 'run_scan' in locals() and run_scan:
                             "TP3 (4.0R)": f"${tp3:.2f}",
                             "RSI": f"{rsi:.1f}",
                             "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "Whale Vol": "🐋 Spike" if is_whale_spike else "Normal",
+                            "Whale Vol": "🐋 Spike 🟢" if is_whale_spike else "Normal ⚪",
                             "Dev Pulse": dev_status,
                             "UT Bot": ut_status,
                             "Risk ($USDT)": f"-${dollar_risk:.2f}",
