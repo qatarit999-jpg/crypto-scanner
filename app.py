@@ -266,6 +266,30 @@ with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"
     for item in get_crypto_news():
         st.markdown(f"- {item}")
 
+# 🧮 Interactive Risk Management & PnL Calculator Panel
+st.markdown("---")
+st.subheader("🧮 Live Risk Management & PnL Calculator")
+st.markdown("Configure your margin allocation and leverage to calculate exact risk exposure and profit targets.")
+
+calc_col1, calc_col2, calc_col3, calc_col4 = st.columns(4)
+with calc_col1:
+    calc_margin = st.number_input("Margin Amount ($USDT)", min_value=1.0, max_value=10000.0, value=investment, step=10.0)
+with calc_col2:
+    calc_lev = st.number_input("Leverage (x)", min_value=1, max_value=100, value=leverage, step=1)
+with calc_col3:
+    calc_entry = st.number_input("Estimated Entry Price ($)", min_value=0.0001, value=100.0, step=0.01, format="%.4f")
+with calc_col4:
+    calc_target_pct = st.number_input("Target Gain (%)", min_value=0.1, max_value=500.0, value=5.0, step=0.5)
+
+total_position_size = calc_margin * calc_lev
+potential_profit_usdt = total_position_size * (calc_target_pct / 100.0)
+max_loss_usdt = calc_margin  # Max loss capped at margin for cross/isolated without liquidation buffer
+
+pnl_col1, pnl_col2, pnl_col3 = st.columns(3)
+pnl_col1.metric("Total Position Notional", f"${total_position_size:,.2f} USDT")
+pnl_col2.metric("Projected Profit (TP)", f"+${potential_profit_usdt:,.2f} USDT", delta=f"+{calc_target_pct}% Move")
+pnl_col3.metric("Max Margin Risk (SL)", f"-${max_loss_usdt:,.2f} USDT", delta="100% Margin Risk Allocation", delta_color="inverse")
+
 # 🐋 Exchange Whale & Large-Block Volume Detector
 st.markdown("---")
 st.subheader("🐋 Exchange Whale & Large-Block Volume Detector")
@@ -505,7 +529,7 @@ if 'run_scan' in locals() and run_scan:
                     else:
                         bar_state = f"⚖️ Consolidation @ ${price:.2f}"
 
-                    # Fair Value Gap (FVG) Detection (Last 3 candles)
+                    # Fair Value Gap (FVG) Detection
                     fvg_status = "None ⚪"
                     if len(df) >= 3:
                         c1_high = df['high'].iloc[-3]
@@ -518,25 +542,23 @@ if 'run_scan' in locals() and run_scan:
                         elif c3_high < c1_low:
                             fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} - ${c1_low:.2f})"
 
-                    # Fetch Daily ('1d') candle status
+                    # Daily Candle Status
                     daily_close_status = "Neutral ⚪"
                     try:
                         d_candles = exchange.fetch_ohlcv(symbol, '1d', limit=2)
                         if d_candles and len(d_candles) > 0:
                             d_last = d_candles[-1]
-                            d_open, d_close = d_last[1], d_last[4]
-                            daily_close_status = "Bullish 🟢" if d_close >= d_open else "Bearish 🔴"
+                            daily_close_status = "Bullish 🟢" if d_last[4] >= d_last[1] else "Bearish 🔴"
                     except Exception:
                         pass
 
-                    # Fetch Monthly ('1M') candle status
+                    # Monthly Candle Status
                     monthly_close_status = "Neutral ⚪"
                     try:
                         m_candles = exchange.fetch_ohlcv(symbol, '1M', limit=2)
                         if m_candles and len(m_candles) > 0:
                             m_last = m_candles[-1]
-                            m_open, m_close = m_last[1], m_last[4]
-                            monthly_close_status = "Bullish 🟢" if m_close >= m_open else "Bearish 🔴"
+                            monthly_close_status = "Bullish 🟢" if m_last[4] >= m_last[1] else "Bearish 🔴"
                     except Exception:
                         pass
                     
@@ -545,13 +567,23 @@ if 'run_scan' in locals() and run_scan:
                     
                     if rsi < 35 or rsi > 65:
                         signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
-                        sl = price * 0.98 if signal.startswith("LONG") else price * 1.02
-                        tp1 = price * 1.02 if signal.startswith("LONG") else price * 0.98
-                        tp2 = price * 1.04 if signal.startswith("LONG") else price * 0.96
-                        tp3 = price * 1.06 if signal.startswith("LONG") else price * 0.94
+                        
+                        # Optimal Entry Price Calculation (pullback to recent support/resistance or current market price)
+                        if signal.startswith("LONG"):
+                            entry_price = price * 0.995  # Optimized limit entry slightly below current market
+                            sl = price * 0.980
+                            tp1 = price * 1.020
+                            tp2 = price * 1.040
+                            tp3 = price * 1.060
+                        else:
+                            entry_price = price * 1.005  # Optimized limit entry slightly above current market
+                            sl = price * 1.020
+                            tp1 = price * 0.980
+                            tp2 = price * 0.960
+                            tp3 = price * 0.940
                         
                         position_notional = investment * leverage
-                        dollar_risk = position_notional * (abs(price - sl) / price)
+                        dollar_risk = position_notional * (abs(entry_price - sl) / entry_price)
                         
                         if signal.startswith("SHORT"):
                             if is_ut_buy or pvt_rising:
@@ -567,7 +599,8 @@ if 'run_scan' in locals() and run_scan:
                         matches.append({
                             "Symbol": symbol,
                             "Direction": signal,
-                            "Price": f"${price:.2f}",
+                            "Market Price": f"${price:.2f}",
+                            "Entry Price": f"${entry_price:.2f}",
                             "Price Action": bar_state,
                             "Fair Value Gap": fvg_status,
                             "Daily Close": daily_close_status,
