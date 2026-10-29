@@ -9,6 +9,13 @@ import json
 import os
 import re
 
+# Optional TradingView official TA library import
+try:
+    from tradingview_ta import TA_Handler, Interval
+    TV_AVAILABLE = True
+except ImportError:
+    TV_AVAILABLE = False
+
 # Page configuration
 st.set_page_config(page_title="Tether (USDT-M) Futures & Global Auth Scanner", page_icon="⚡", layout="wide")
 
@@ -260,7 +267,7 @@ else:
 
 # Main Header
 st.title("⚡ Multi-Exchange USDT Perpetual Futures Scanner")
-st.markdown("Strictly USDⓈ-M derivatives screening, TradingView-aligned UT Bot indicators, and Price Volume Trend (PVT) confirmation.")
+st.markdown("Strictly USDⓈ-M derivatives screening, TradingView-aligned TA recommendations, and Price Volume Trend confirmation.")
 
 # News & Regulatory Expander
 with st.expander("📰 Live Macro, SEC Regulatory Filings & London Crypto Intel"):
@@ -406,9 +413,20 @@ st.markdown("---")
 if 'scan_results' not in st.session_state:
     st.session_state.scan_results = []
 
+# Map Streamlit timeframe to TradingView Interval
+tv_interval_map = {
+    "1m": Interval.INTERVAL_1_MINUTE if TV_AVAILABLE else None,
+    "5m": Interval.INTERVAL_5_MINUTES if TV_AVAILABLE else None,
+    "15m": Interval.INTERVAL_15_MINUTES if TV_AVAILABLE else None,
+    "30m": Interval.INTERVAL_30_MINUTES if TV_AVAILABLE else None,
+    "1h": Interval.INTERVAL_1_HOUR if TV_AVAILABLE else None,
+    "4h": Interval.INTERVAL_4_HOURS if TV_AVAILABLE else None,
+    "1d": Interval.INTERVAL_1_DAY if TV_AVAILABLE else None,
+}
+
 # Live Scan Execution Block
 if 'run_scan' in locals() and run_scan:
-    with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server (USDT Swaps Only)..."):
+    with st.spinner(f"Connecting to {selected_exchange_name} Derivatives Server & TradingView API..."):
         try:
             exchange_map = {
                 "MEXC": ccxt.mexc,
@@ -458,7 +476,7 @@ if 'run_scan' in locals() and run_scan:
                 
             matches = []
             total_symbols = len(symbols)
-            progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts...")
+            progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts & TradingView data...")
             
             for idx, symbol in enumerate(symbols):
                 progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
@@ -476,10 +494,41 @@ if 'run_scan' in locals() and run_scan:
                     if pd.isna(current_price) or current_price <= 0.0001:
                         continue
 
-                    delta = df['close'].diff()
-                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                    df['rsi'] = 100 - (100 / (1 + (gain / loss)))
+                    # Fetch Official TradingView Recommendation & Indicators if available
+                    tv_recommendation = "NEUTRAL ⚪"
+                    rsi = 50.0
+                    if TV_AVAILABLE:
+                        try:
+                            base_sym = symbol.split('/')[0].upper()
+                            tv_ex = selected_exchange_name.upper()
+                            # Query TradingView TA
+                            handler = TA_Handler(
+                                symbol=f"{base_sym}USDT",
+                                exchange=tv_ex,
+                                screener="crypto",
+                                interval=tv_interval_map.get(selected_tf, Interval.INTERVAL_30_MINUTES)
+                            )
+                            analysis = handler.get_analysis()
+                            tv_rec = analysis.summary.get('RECOMMENDATION', 'NEUTRAL')
+                            if tv_rec == 'BUY' or tv_rec == 'STRONG_BUY':
+                                tv_recommendation = "BUY 🟢"
+                            elif tv_rec == 'SELL' or tv_rec == 'STRONG_SELL':
+                                tv_recommendation = "SELL 🔴"
+                            
+                            rsi = analysis.indicators.get('RSI', 50.0)
+                        except Exception:
+                            # Fallback to local calculation if TV lookup fails for specific altcoin pair
+                            delta = df['close'].diff()
+                            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                            rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+                            tv_recommendation = "BUY 🟢" if rsi < 50 else "SELL 🔴"
+                    else:
+                        delta = df['close'].diff()
+                        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                        rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+                        tv_recommendation = "BUY 🟢" if rsi < 50 else "SELL 🔴"
                     
                     price_change_pct = df['close'].pct_change()
                     df['pvt'] = (df['volume'] * price_change_pct).cumsum().fillna(0)
@@ -489,33 +538,9 @@ if 'run_scan' in locals() and run_scan:
                     tr2 = np.abs(df['high'] - df['close'].shift())
                     tr3 = np.abs(df['low'] - df['close'].shift())
                     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    
                     atr = tr.rolling(window=10).mean()
                     
-                    ts = [df['close'].iloc[0]]
-                    for i in range(1, len(df)):
-                        c = df['close'].iloc[i]
-                        pc = df['close'].iloc[i-1]
-                        cl = atr.iloc[i]
-                        if pd.isna(cl):
-                            cl = 0.0
-                        prev_t = ts[-1]
-                        
-                        if c > prev_t and pc > prev_t:
-                            t = max(prev_t, c - cl)
-                        elif c < prev_t and pc < prev_t:
-                            t = min(prev_t, c + cl)
-                        elif c > prev_t:
-                            t = c - cl
-                        else:
-                            t = c + cl
-                        ts.append(t)
-                        
-                    df['ut_stop'] = ts
-                    ut_status = "BUY 🟢" if df['close'].iloc[-1] > df['ut_stop'].iloc[-1] else "SELL 🔴"
-                    
                     latest = df.iloc[-1]
-                    rsi = latest['rsi']
                     price = latest['close']
                     
                     open_p = latest['open']
@@ -528,11 +553,11 @@ if 'run_scan' in locals() and run_scan:
                     
                     if total_bar_range > 0 and (body_size / total_bar_range) > 0.6:
                         if close_p > open_p:
-                            bar_state = f"🟢 Bullish Impulse @ ${price:.2f}"
+                            bar_state = f"🟢 Bullish Impulse @ ${price:.4f}" if price < 1 else f"🟢 Bullish Impulse @ ${price:.2f}"
                         else:
-                            bar_state = f"🔴 Bearish Dump @ ${price:.2f}"
+                            bar_state = f"🔴 Bearish Dump @ ${price:.4f}" if price < 1 else f"🔴 Bearish Dump @ ${price:.2f}"
                     else:
-                        bar_state = f"⚖️ Consolidation @ ${price:.2f}"
+                        bar_state = f"⚖️ Consolidation @ ${price:.4f}" if price < 1 else f"⚖️ Consolidation @ ${price:.2f}"
 
                     # Fair Value Gap (FVG) Detection
                     fvg_status = "None ⚪"
@@ -543,9 +568,9 @@ if 'run_scan' in locals() and run_scan:
                         c3_high = df['high'].iloc[-1]
                         
                         if c3_low > c1_high:
-                            fvg_status = f"🟢 Bullish FVG (${c1_high:.2f} - ${c3_low:.2f})"
+                            fvg_status = f"🟢 Bullish FVG"
                         elif c3_high < c1_low:
-                            fvg_status = f"🔴 Bearish FVG (${c3_high:.2f} - ${c1_low:.2f})"
+                            fvg_status = f"🔴 Bearish FVG"
 
                     # Previous Fully Closed Daily Candle Status
                     prev_daily_status = "Neutral ⚪"
@@ -590,10 +615,9 @@ if 'run_scan' in locals() and run_scan:
                         zone_status = "🔴 Bearish Rejection Risk / Resistance Triggered"
                     
                     pvt_rising = latest['pvt'] > latest['pvt_signal']
-                    is_ut_buy = ut_status.startswith("BUY")
                     
-                    if rsi < 35 or rsi > 65:
-                        signal = "LONG 🟢" if rsi < 35 else "SHORT 🔴"
+                    if rsi < 45 or rsi > 55:
+                        signal = "LONG 🟢" if rsi < 45 else "SHORT 🔴"
                         
                         if signal.startswith("LONG"):
                             entry_price = price * 0.995
@@ -611,16 +635,7 @@ if 'run_scan' in locals() and run_scan:
                         position_notional = investment * leverage
                         dollar_risk = position_notional * (abs(entry_price - sl) / entry_price)
                         
-                        if signal.startswith("SHORT"):
-                            if is_ut_buy or pvt_rising:
-                                advice = "⏳ Wait: Bullish Momentum Active"
-                            else:
-                                advice = "🚨 Ready: Confirmed Short Entry"
-                        else:
-                            if not is_ut_buy or not pvt_rising:
-                                advice = "⏳ Wait: Bearish Momentum Active"
-                            else:
-                                advice = "🚀 Ready: Confirmed Long Entry"
+                        advice = "🚀 Ready: Confirmed Entry" if tv_recommendation.startswith("BUY") and signal.startswith("LONG") else "⏳ Wait: Monitoring Setup"
 
                         matches.append({
                             "Symbol": symbol,
@@ -642,7 +657,7 @@ if 'run_scan' in locals() and run_scan:
                             "TP3 (4.0R)": f"${tp3:.4f}" if tp3 < 1 else f"${tp3:.2f}",
                             "RSI": f"{rsi:.1f}",
                             "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
-                            "UT Bot": ut_status,
+                            "TradingView Signal": tv_recommendation,
                             "Risk ($USDT)": f"-${dollar_risk:.2f}",
                             "Status": advice
                         })
@@ -682,6 +697,7 @@ if st.session_state.scan_results:
         st.markdown(f"""
         - **Signal Direction:** {selected_item['Direction']}
         - **Entry Price:** {selected_item['Entry Price']}
+        - **TradingView Official Signal:** {selected_item.get('TradingView Signal', 'Neutral ⚪')}
         - **Zone Status (Proximity Trigger):** {selected_item.get('Zone Status', 'Normal Range ⚪')}
         - **Support Zones:** S1: {selected_item['Support 1']} | S2: {selected_item['Support 2']}
         - **Resistance Zones:** R1: {selected_item['Resistance 1']} | R2: {selected_item['Resistance 2']}
