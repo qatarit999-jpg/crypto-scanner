@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import streamlit.components.v1 as components
 import urllib.request
-import urllib.parse
 import xml.etree.ElementTree as ET
 import json
 import os
@@ -239,12 +238,6 @@ else:
     selected_tf = timeframe_map[selected_tf_label]
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown("🔔 **WhatsApp & System Alarm Settings**")
-    enable_whatsapp_alert = st.sidebar.checkbox("Enable Free WhatsApp Alerts", value=False)
-    whatsapp_phone = st.sidebar.text_input("WhatsApp Phone (e.g. +923001234567)", value="")
-    whatsapp_apikey = st.sidebar.text_input("CallMeBot API Key", type="password", help="Get free key by messaging 'I allow callmebot to send me messages' to their bot.")
-
-    st.sidebar.markdown("---")
     st.sidebar.markdown("🐦 **Crypto Trader Twitter / X Settings**")
 
     trader_options = {
@@ -467,9 +460,6 @@ if 'run_scan' in locals() and run_scan:
             total_symbols = len(symbols)
             progress_bar = st.progress(0, text="Scanning USDT Perpetual Swap contracts...")
             
-            # Track triggers for sound/alarm/whatsapp execution
-            triggered_events = []
-            
             for idx, symbol in enumerate(symbols):
                 progress_bar.progress((idx + 1) / total_symbols, text=f"Scanning futures contract {idx+1}/{total_symbols}: {symbol}")
                 try:
@@ -577,17 +567,22 @@ if 'run_scan' in locals() and run_scan:
                     except Exception:
                         pass
 
-                    # Calculate 2 Support Zones and 2 Resistance Zones
-                    recent_lows = df['low'].rolling(20).min().iloc[-1]
-                    recent_highs = df['high'].rolling(20).max().iloc[-1]
+                    # Strictly Separated Support Zones (BELOW price) and Resistance Zones (ABOVE price)
+                    recent_low = df['low'].rolling(20).min().iloc[-1]
+                    recent_high = df['high'].rolling(20).max().iloc[-1]
                     current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else price * 0.01
 
                     s1 = price - current_atr
-                    s2 = recent_lows if recent_lows < price else price - (current_atr * 2)
-                    r1 = price + current_atr
-                    r2 = recent_highs if recent_highs > price else price + (current_atr * 2)
+                    s2 = recent_low if recent_low < price else price - (current_atr * 2)
+                    if s2 >= price:
+                        s2 = price - (current_atr * 2.5)
 
-                    # Proximity Reversal & Bearish Trigger Marking (Calibrated to 2.5%)
+                    r1 = price + current_atr
+                    r2 = recent_high if recent_high > price else price + (current_atr * 2)
+                    if r2 <= price:
+                        r2 = price + (current_atr * 2.5)
+
+                    # Proximity Reversal & Bearish Trigger Marking
                     zone_status = "Normal Range ⚪"
                     if abs(price - s1) / price <= 0.025 or abs(price - s2) / price <= 0.025:
                         zone_status = "🟢 Bullish Reversal Bounce Triggered near Support"
@@ -627,28 +622,24 @@ if 'run_scan' in locals() and run_scan:
                             else:
                                 advice = "🚀 Ready: Confirmed Long Entry"
 
-                        # Track trigger for alarm / whatsapp if zone triggered
-                        if "Triggered" in zone_status or "Ready" in advice:
-                            triggered_events.append(f"{symbol} -> {signal} @ ${price:.2f} ({zone_status})")
-
                         matches.append({
                             "Symbol": symbol,
                             "Direction": signal,
-                            "Market Price": f"${price:.2f}",
-                            "Entry Price": f"${entry_price:.2f}",
+                            "Market Price": f"${price:.4f}" if price < 1 else f"${price:.2f}",
+                            "Entry Price": f"${entry_price:.4f}" if entry_price < 1 else f"${entry_price:.2f}",
                             "Price Action": bar_state,
                             "Fair Value Gap": fvg_status,
                             "Prev Daily Close": prev_daily_status,
                             "Prev Monthly Close": prev_monthly_status,
                             "Zone Status": zone_status,
-                            "Support 1": f"${s1:.2f}",
-                            "Support 2": f"${s2:.2f}",
-                            "Resistance 1": f"${r1:.2f}",
-                            "Resistance 2": f"${r2:.2f}",
-                            "Stop Loss": f"${sl:.2f}",
-                            "TP1 (1.5R)": f"${tp1:.2f}",
-                            "TP2 (2.5R)": f"${tp2:.2f}",
-                            "TP3 (4.0R)": f"${tp3:.2f}",
+                            "Support 1": f"${s1:.4f}" if s1 < 1 else f"${s1:.2f}",
+                            "Support 2": f"${s2:.4f}" if s2 < 1 else f"${s2:.2f}",
+                            "Resistance 1": f"${r1:.4f}" if r1 < 1 else f"${r1:.2f}",
+                            "Resistance 2": f"${r2:.4f}" if r2 < 1 else f"${r2:.2f}",
+                            "Stop Loss": f"${sl:.4f}" if sl < 1 else f"${sl:.2f}",
+                            "TP1 (1.5R)": f"${tp1:.4f}" if tp1 < 1 else f"${tp1:.2f}",
+                            "TP2 (2.5R)": f"${tp2:.4f}" if tp2 < 1 else f"${tp2:.2f}",
+                            "TP3 (4.0R)": f"${tp3:.4f}" if tp3 < 1 else f"${tp3:.2f}",
                             "RSI": f"{rsi:.1f}",
                             "PVT Trend": "Bullish 🟢" if pvt_rising else "Bearish 🔴",
                             "UT Bot": ut_status,
@@ -661,39 +652,6 @@ if 'run_scan' in locals() and run_scan:
             progress_bar.empty()
             st.session_state.scan_results = matches
             
-            # Execute Double Shout Audio Alarm if triggers found
-            if triggered_events:
-                st.toast(f"🚨 ALERT: {len(triggered_events)} active zone triggers found!", icon="🔔")
-                
-                # Browser Twice-Shout Web Audio API Beep
-                alarm_js = """
-                <script>
-                function playBeep() {
-                    var context = new (window.AudioContext || window.webkitAudioContext)();
-                    var osc = context.createOscillator();
-                    var gain = context.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = 880;
-                    osc.connect(gain);
-                    gain.connect(context.destination);
-                    osc.start();
-                    setTimeout(function() { osc.stop(); }, 300);
-                }
-                playBeep();
-                setTimeout(playBeep, 400);
-                </script>
-                """
-                components.html(alarm_js, height=0)
-
-                # Send WhatsApp Alert if enabled
-                if enable_whatsapp_alert and whatsapp_phone and whatsapp_apikey:
-                    try:
-                        alert_msg = urllib.parse.quote(f"🚨 Scanner Alert! Found {len(triggered_events)} active setups. Check your dashboard.")
-                        wa_url = f"https://api.callmebot.com/whatsapp.php?phone={whatsapp_phone}&text={alert_msg}&apikey={whatsapp_apikey}"
-                        urllib.request.urlopen(wa_url, timeout=5)
-                    except Exception as wa_err:
-                        st.sidebar.warning(f"WhatsApp Alert failed: {wa_err}")
-
         except Exception as e:
             st.error(f"Error executing USDT futures scan: {e}")
 
@@ -721,7 +679,6 @@ if st.session_state.scan_results:
     if selected_item:
         st.markdown(f"### Detailed Setup for **{selected_item['Symbol']}**")
         
-        # Clean vertical text blocks to prevent any text truncation or cutoff
         st.markdown(f"""
         - **Signal Direction:** {selected_item['Direction']}
         - **Entry Price:** {selected_item['Entry Price']}
@@ -732,12 +689,10 @@ if st.session_state.scan_results:
         
         st.info(f"**Trader Advisory & Status:** {selected_item['Status']} | **Fair Value Gap:** {selected_item['Fair Value Gap']} | **RSI:** {selected_item['RSI']}")
         
-        # Format Symbol for TradingView Embed (e.g., BINANCE:BTCUSDT or MEXC:BTCUSDT)
         base_clean = selected_item['Symbol'].split('/')[0].upper()
         tv_exchange = selected_exchange_name.upper()
         tv_symbol_str = f"{tv_exchange}:{base_clean}USDT"
         
-        # Official TradingView Advanced Real-Time Chart Widget HTML embed with properly escaped JS curly braces
         tv_html = f"""
         <div class="tradingview-widget-container" style="height:550px;width:100%">
           <div id="tradingview_chart" style="height:550px;width:100%"></div>
